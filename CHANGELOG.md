@@ -14,6 +14,7 @@
 
 ### Fixed
 
+- Fixed sharded shared-BM25 merge behavior in `src/orchestration/query_set_sharded_shared_bm25.ts` so merged runs no longer abort when shard-local `benchmark_manifest_snapshot.json` and `run_setup.json` differ. The merge path now skips shard-local metadata copies, synthesizes canonical merged-level metadata for the full query set, and has focused regression coverage in `tests/query_set_sharded_shared_bm25.test.ts`.
 - Fixed calibration computation to include the final partial confidence bin instead of silently dropping the tail of the sample when the evaluation count is not an exact multiple of the target bin size.
 
 ## [0.2.3] - 2026-04-03

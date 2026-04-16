@@ -22,7 +22,13 @@ import {
   resolveBenchmarkQuerySetLaunchPlan,
   type BenchmarkQuerySetLaunchPlan,
 } from "./benchmark_query_set_launch";
-import { getDefaultBenchmarkId, listBenchmarks } from "../benchmarks/registry";
+import {
+  createBenchmarkManifestSnapshot,
+  getDefaultBenchmarkId,
+  listBenchmarks,
+  resolveBenchmarkConfig,
+} from "../benchmarks/registry";
+import { resolveGitCommitProvenance } from "../runtime/git";
 
 type Args = {
   benchmarkId?: string;
@@ -77,6 +83,22 @@ type ShardFile = {
   shardName: string;
   path: string;
   queryCount: number;
+};
+
+type PersistedRunSetup = {
+  slice?: string;
+  model?: string;
+  queryFile?: string;
+  qrelsFile?: string;
+  shardCount?: string;
+  totalQueries?: string;
+  timeoutSeconds?: string;
+  indexPath?: string;
+  bm25K1?: string;
+  bm25B?: string;
+  bm25Threads?: string;
+  maxShardAttempts?: string;
+  shardRetryMode?: string;
 };
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -477,20 +499,100 @@ function collectRelativeFiles(rootPath: string): string[] {
   return results;
 }
 
-function mergeShardOutputs(plan: ShardedLaunchPlan, shardNames: string[]): void {
+function resolveEnvValue(name: string, fallback?: string): string | undefined {
+  const value = process.env[name]?.trim();
+  if (value) {
+    return value;
+  }
+  return fallback;
+}
+
+function buildPersistedRunSetup(args: {
+  querySetId: string;
+  model: string;
+  queryPath: string;
+  qrelsPath: string;
+  totalQueries: number;
+  timeoutSeconds: number;
+  indexPath: string;
+}): PersistedRunSetup {
+  return {
+    slice: args.querySetId,
+    model: args.model,
+    queryFile: args.queryPath,
+    qrelsFile: args.qrelsPath,
+    shardCount: resolveEnvValue("SHARD_COUNT"),
+    totalQueries: String(args.totalQueries),
+    timeoutSeconds: String(args.timeoutSeconds),
+    indexPath: args.indexPath,
+    bm25K1: resolveEnvValue("PI_BM25_K1", "0.9"),
+    bm25B: resolveEnvValue("PI_BM25_B", "0.4"),
+    bm25Threads: resolveEnvValue("PI_BM25_THREADS", "1"),
+    maxShardAttempts: resolveEnvValue("MAX_SHARD_ATTEMPTS"),
+    shardRetryMode: resolveEnvValue("SHARD_RETRY_MODE"),
+  };
+}
+
+function writeMergedRunMetadata(plan: ShardedLaunchPlan, totalQueries: number): void {
+  const benchmarkConfig = resolveBenchmarkConfig({
+    benchmarkId: plan.benchmarkId,
+    querySetId: plan.querySetId,
+    queryPath: plan.queryPath,
+    qrelsPath: plan.qrelsPath,
+    indexPath: plan.indexPath,
+  });
+  const benchmarkManifestSnapshot = createBenchmarkManifestSnapshot(
+    benchmarkConfig,
+    resolveGitCommitProvenance(REPO_ROOT),
+  );
+  writeFileSync(
+    resolve(REPO_ROOT, plan.mergedOutputDir, "benchmark_manifest_snapshot.json"),
+    `${JSON.stringify(benchmarkManifestSnapshot, null, 2)}\n`,
+    "utf8",
+  );
+  writeFileSync(
+    resolve(REPO_ROOT, plan.mergedOutputDir, "run_setup.json"),
+    `${JSON.stringify(
+      buildPersistedRunSetup({
+        querySetId: plan.querySetId,
+        model: plan.model,
+        queryPath: plan.queryPath,
+        qrelsPath: plan.qrelsPath,
+        totalQueries,
+        timeoutSeconds: plan.timeoutSeconds,
+        indexPath: plan.indexPath,
+      }),
+      null,
+      2,
+    )}\n`,
+    "utf8",
+  );
+}
+
+export function mergeShardOutputs(
+  plan: ShardedLaunchPlan,
+  shardNames: string[],
+  totalQueries: number,
+): void {
   mkdirSync(resolve(REPO_ROOT, plan.mergedOutputDir), { recursive: true });
   for (const shardName of shardNames) {
     const shardRoot = `${plan.shardOutputRoot}/${shardName}`;
     for (const relativePath of collectRelativeFiles(shardRoot)) {
       const fromShard = relativePath.slice(`${shardRoot}/`.length);
+      const allowedTopLevelQueryJson =
+        /^[^/]+\.json$/u.test(fromShard) &&
+        !fromShard.includes("/") &&
+        fromShard !== "benchmark_manifest_snapshot.json" &&
+        fromShard !== "run_setup.json";
       const allowed =
-        (/^[^/]+\.json$/u.test(fromShard) && !fromShard.includes("/")) ||
+        allowedTopLevelQueryJson ||
         /^raw-events\/[^/]+\.jsonl$/u.test(fromShard) ||
         /^stderr\/[^/]+\.log$/u.test(fromShard);
       if (!allowed) continue;
       copyUniqueFile(relativePath, `${plan.mergedOutputDir}/${fromShard}`);
     }
   }
+  writeMergedRunMetadata(plan, totalQueries);
 }
 
 async function isTcpPortListening(host: string, port: number): Promise<boolean> {
@@ -844,6 +946,7 @@ async function main(): Promise<void> {
     mergeShardOutputs(
       plan,
       shardFiles.map((file) => file.shardName),
+      shardFiles.reduce((sum, file) => sum + file.queryCount, 0),
     );
     logLine(runLogPath, `Merging shard outputs into ${plan.mergedOutputDir}`);
     appendFileSync(
@@ -883,4 +986,6 @@ async function main(): Promise<void> {
   process.exit(status);
 }
 
-await main();
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  await main();
+}
