@@ -31,6 +31,7 @@
     "evaluate:run": "npx tsx src/wrappers/evaluate_run_with_pi_entry.ts",
     "evaluate:retrieval": "npx tsx src/wrappers/evaluate_retrieval_entry.ts",
     "report:run": "npx tsx src/wrappers/report_run_markdown_entry.ts",
+    "adapt:search-jsonl-run": "npx tsx src/adapters/import_search_jsonl_run.ts",
     "tune:bm25": "npx tsx src/orchestration/tune_bm25_entry.ts",
     "compare:bm25": "npx tsx src/evaluation/compare_bm25_runs.ts",
     "bench": "npx tsx src/operator/benchctl.ts",

@@ -53,6 +53,13 @@ export type JudgeEvaluationSummary = {
   "Answer Cited Recall Micro (%)"?: number;
   "Recall Macro (%)"?: number;
   "Recall Micro (%)"?: number;
+  "Calibration Error (%)"?: number | null;
+  "Calibration Error Computed"?: boolean;
+  "Calibration Metric"?: string;
+  "Calibration Semantics"?: string;
+  "Calibration Confidence Source"?: string;
+  "Calibration Confidence Count"?: number;
+  "Calibration Defaulted Count"?: number;
   per_query_metrics?: Array<{
     query_id?: string | number;
     correct?: boolean;

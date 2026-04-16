@@ -11,6 +11,11 @@ import type { ChildProcess } from "node:child_process";
 import { createInterface } from "node:readline";
 
 import { createJudgePrompt } from "./judge_prompt";
+import {
+  calibrationError,
+  extractResponseSelfReportedConfidence,
+  resolveResponseCalibrationConfidence,
+} from "./calibration";
 import { parseJudgeResponse, type JudgeResult } from "./judge_parse";
 import { getDefaultBenchmarkId, resolveBenchmarkConfig } from "../benchmarks/registry";
 import type { BenchmarkJudgeEvalMode } from "../benchmarks/types";
@@ -69,6 +74,8 @@ type EvaluationRecord = {
   query_id: string;
   question?: string;
   response: string;
+  response_confidence: number | null;
+  calibration_confidence: number | null;
   correct_answer: string;
   judge_mode: BenchmarkJudgeEvalMode;
   is_completed: boolean;
@@ -415,31 +422,6 @@ function average(values: number[]): number | null {
   return values.reduce((sum, value) => sum + value, 0) / values.length;
 }
 
-function calibrationError(confidences: number[], correctness: boolean[], beta = 100): number {
-  if (confidences.length === 0 || confidences.length !== correctness.length) {
-    throw new Error("Confidences and correctness arrays must be non-empty and aligned.");
-  }
-  const pairs = confidences.map((confidence, index) => ({
-    confidence: confidence / 100,
-    correct: correctness[index] ? 1 : 0,
-  }));
-  pairs.sort((a, b) => a.confidence - b.confidence);
-  const bins: Array<[number, number]> = [];
-  for (let start = 0; start < pairs.length; start += beta) {
-    bins.push([start, Math.min(start + beta, pairs.length)]);
-  }
-  let cerr = 0;
-  for (const [start, end] of bins) {
-    const slice = pairs.slice(start, end);
-    if (slice.length === 0) continue;
-    const binConfidence = average(slice.map((item) => item.confidence)) ?? 0;
-    const binCorrect = average(slice.map((item) => item.correct)) ?? 0;
-    const difference = Math.abs(binConfidence - binCorrect);
-    cerr += (slice.length / pairs.length) * difference * difference;
-  }
-  return Math.sqrt(cerr) * 100;
-}
-
 function stringifyScalar(value: unknown): string {
   if (
     typeof value === "string" ||
@@ -467,7 +449,9 @@ function writeDetailedCsv(allResults: EvaluationRecord[], outputDir: string): st
       "predicted_answer",
       "correct_answer",
       "judge_correct",
-      "confidence",
+      "response_confidence",
+      "calibration_confidence",
+      "judge_confidence",
       "is_completed",
       "parse_error",
       "json_path",
@@ -486,6 +470,8 @@ function writeDetailedCsv(allResults: EvaluationRecord[], outputDir: string): st
       predictedAnswer,
       result.correct_answer,
       stringifyScalar(result.judge_result.correct ?? ""),
+      stringifyScalar(result.response_confidence ?? ""),
+      stringifyScalar(result.calibration_confidence ?? ""),
       stringifyScalar(result.judge_result.confidence ?? ""),
       stringifyScalar(result.is_completed),
       stringifyScalar(result.judge_result.parse_error),
@@ -778,7 +764,18 @@ async function main() {
     );
     if (existsSync(evalPath) && !args.force) {
       const existingEval = JSON.parse(readFileSync(evalPath, "utf8")) as EvaluationRecord;
-      allResults.push(existingEval);
+      const normalizedExistingEval: EvaluationRecord = {
+        ...existingEval,
+        response_confidence:
+          typeof existingEval.response_confidence === "number"
+            ? existingEval.response_confidence
+            : extractResponseSelfReportedConfidence(existingEval.response),
+        calibration_confidence:
+          typeof existingEval.calibration_confidence === "number"
+            ? existingEval.calibration_confidence
+            : resolveResponseCalibrationConfidence(existingEval.response),
+      };
+      allResults.push(normalizedExistingEval);
       skipped += 1;
       console.log(`[${index + 1}/${jsonPaths.length}] Skipping ${jsonPath}; existing eval found`);
       continue;
@@ -811,6 +808,8 @@ async function main() {
     }
     const isCompleted = runData.status === "completed";
     const response = getFinalResponse(runData);
+    const responseConfidence = extractResponseSelfReportedConfidence(response);
+    const calibrationConfidence = resolveResponseCalibrationConfidence(response);
     const surfacedDocids = [...getSurfacedDocids(runData)].sort();
     const previewedDocids = [...getPreviewedDocids(runData)].sort();
     const openedDocids = [...getOpenedDocids(runData)].sort();
@@ -826,6 +825,8 @@ async function main() {
       json_path: jsonPath,
       query_id: queryId,
       response,
+      response_confidence: responseConfidence,
+      calibration_confidence: calibrationConfidence,
       correct_answer: gt?.answer ?? "",
       judge_mode: judgeMode,
       is_completed: isCompleted,
@@ -948,20 +949,31 @@ async function main() {
   }
 
   const correctness: boolean[] = [];
-  const confidences: number[] = [];
-  let missingJudgeConfidenceCount = 0;
+  const calibrationConfidences: number[] = [];
+  let missingCalibrationConfidenceCount = 0;
+  let defaultedResponseConfidenceCount = 0;
   for (const record of allResults) {
     if (!record.judge_result.parse_error && record.judge_result.correct !== null) {
-      if (record.judge_result.confidence !== null) {
+      if (record.calibration_confidence !== null) {
         correctness.push(record.judge_result.correct);
-        confidences.push(record.judge_result.confidence);
+        calibrationConfidences.push(record.calibration_confidence);
+        if (record.response_confidence === null) {
+          defaultedResponseConfidenceCount += 1;
+        }
       } else {
-        missingJudgeConfidenceCount += 1;
+        missingCalibrationConfidenceCount += 1;
       }
     }
   }
-  if (missingJudgeConfidenceCount > 0) {
-    console.log(`Warning: ${missingJudgeConfidenceCount} judged results are missing confidence.`);
+  if (missingCalibrationConfidenceCount > 0) {
+    console.log(
+      `Warning: ${missingCalibrationConfidenceCount} judged results are missing response confidence for calibration.`,
+    );
+  }
+  if (defaultedResponseConfidenceCount > 0) {
+    console.log(
+      `Info: defaulted ${defaultedResponseConfidenceCount} missing response confidence values to 100 for calibration compatibility.`,
+    );
   }
 
   function computeMacroRecall(selector: (record: EvaluationRecord) => number | null) {
@@ -1053,13 +1065,13 @@ async function main() {
     citedRecallMicroAvg === null ? null : citedRecallMicroAvg * 100,
     2,
   );
-  const calibrationComputed = confidences.length >= 100;
+  const calibrationComputed = calibrationConfidences.length >= 100;
   const calibrationErrorPercent = calibrationComputed
-    ? round(calibrationError(confidences, correctness), 2)
+    ? round(calibrationError(calibrationConfidences, correctness), 2)
     : null;
   if (!calibrationComputed) {
     console.log(
-      `Warning: ${confidences.length} confidences available; need at least 100 for calibration error.`,
+      `Warning: ${calibrationConfidences.length} response confidences available; need at least 100 for calibration error.`,
     );
   }
 
@@ -1163,7 +1175,12 @@ async function main() {
     avg_tool_stats: avgToolStats,
     "Calibration Error (%)": calibrationErrorPercent,
     "Calibration Error Computed": calibrationComputed,
-    "Calibration Confidence Count": confidences.length,
+    "Calibration Metric": "response-self-reported-confidence-vs-gold-correctness",
+    "Calibration Semantics":
+      "Calibration Error compares the run response's self-reported confidence to gold-answer correctness. If a completed judged response omits an explicit confidence line, evaluation defaults that response confidence to 100 for BrowseComp-Plus compatibility.",
+    "Calibration Confidence Source": "response",
+    "Calibration Confidence Count": calibrationConfidences.length,
+    "Calibration Defaulted Count": defaultedResponseConfidenceCount,
     "Completed Queries": completedResults.length,
     "Timeout/Incomplete Queries": timeoutOrIncompleteResults.length,
     "Completed Correct": completedCorrectCount,
@@ -1236,9 +1253,11 @@ async function main() {
     "Coverage-tier semantics: surfaced_docids are system-surfaced docs, previewed_docids are docs shown in search result pages, and agent_docids are the union of docs the agent opened or cited.",
   );
   console.log(
-    `Calibration Error: ${typeof calibrationErrorPercent === "number" ? `${calibrationErrorPercent.toFixed(2)}%` : "N/A"}`,
+    `Calibration Error (response self-reported): ${typeof calibrationErrorPercent === "number" ? `${calibrationErrorPercent.toFixed(2)}%` : "N/A"}`,
   );
-  console.log(`Calibration Confidence Count: ${confidences.length}`);
+  console.log(`Calibration Confidence Count: ${calibrationConfidences.length}`);
+  console.log(`Calibration Confidence Source: response self-reported`);
+  console.log(`Calibration Defaulted Count: ${defaultedResponseConfidenceCount}`);
   console.log(`Judge cost total: ${totalJudgeUsage.cost.total.toFixed(6)}`);
   console.log(`Summary saved to ${summaryPath}`);
   console.log(`Detailed CSV saved to ${csvPath}`);

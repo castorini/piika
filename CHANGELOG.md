@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added a BrowseComp-Plus external-run adapter at `src/adapters/import_search_jsonl_run.ts` plus the package script `npm run adapt:search-jsonl-run`, allowing one-JSON-object-per-line search-session artifacts to be normalized into the repo's native run directory format with per-query JSON files, `benchmark_manifest_snapshot.json`, and `run_setup.json`. This makes imported BrowseComp-Plus runs evaluable by both retrieval metrics and the downstream LLM-as-judge pipeline.
+- Added focused regression coverage for the new external-run importer in `tests/import_search_jsonl_run.test.ts` and extracted shared calibration helpers in `src/evaluation/calibration.ts` with focused coverage in `tests/calibration.test.ts`.
+
+### Changed
+
+- Changed judge-evaluation calibration semantics to use the run response's self-reported confidence against gold-answer correctness, matching BrowseComp-Plus' intended calibration contract more closely than the previous judge-confidence-based interpretation.
+- Changed judge-evaluation summary/CSV artifacts to persist response-confidence fields explicitly, including the calibration source and the count of responses that defaulted to `100` confidence for BrowseComp-Plus compatibility when no explicit confidence line was present.
+
+### Fixed
+
+- Fixed calibration computation to include the final partial confidence bin instead of silently dropping the tail of the sample when the evaluation count is not an exact multiple of the target bin size.
+
 ## [0.2.3] - 2026-04-03
 
 ### Added
