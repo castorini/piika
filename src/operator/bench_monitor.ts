@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
-import { basename, join, resolve } from "node:path";
+import { basename, isAbsolute, join, resolve } from "node:path";
 
 import { getDefaultBenchmarkId, resolveBenchmarkConfig } from "../benchmarks/registry";
 import type { BenchmarkManifestSnapshot } from "../benchmarks/types";
@@ -183,6 +183,14 @@ function safeStatMtimeMs(path: string): number | undefined {
   } catch {
     return undefined;
   }
+}
+
+function resolveLoggedRunPath(rootDir: string, runsRoot: string, rawPath: string): string {
+  const value = rawPath.trim();
+  if (!value) return runsRoot;
+  if (isAbsolute(value)) return resolve(value);
+  if (value === "runs" || value.startsWith("runs/")) return resolve(rootDir, value);
+  return resolve(runsRoot, value);
 }
 
 function safeListDir(path: string): string[] {
@@ -542,7 +550,7 @@ function summarizeShardLogs(logDirPath: string): ShardLogSummary[] {
     .sort((left, right) => (right.mtimeMs ?? 0) - (left.mtimeMs ?? 0));
 }
 
-function parseLogDir(logDirPath: string): LogDirInfo {
+function parseLogDir(rootDir: string, runsRoot: string, logDirPath: string): LogDirInfo {
   const runLogPath = join(logDirPath, "run.log");
   const launcherStdoutPath = join(logDirPath, "launcher.stdout.log");
   const bm25LogPath = join(logDirPath, "bm25_server.log");
@@ -580,9 +588,9 @@ function parseLogDir(logDirPath: string): LogDirInfo {
     if (line.startsWith("QUERY_FILE=")) queryFile = line.slice("QUERY_FILE=".length).trim();
     if (line.startsWith("QRELS_FILE=")) qrelsFile = line.slice("QRELS_FILE=".length).trim();
     if (line.startsWith("OUTPUT_ROOT="))
-      outputDir = resolve(logDirPath, "..", line.slice("OUTPUT_ROOT=".length).trim());
+      outputDir = resolveLoggedRunPath(rootDir, runsRoot, line.slice("OUTPUT_ROOT=".length));
     if (line.startsWith("OUTPUT_DIR="))
-      outputDir = resolve(logDirPath, "..", line.slice("OUTPUT_DIR=".length).trim());
+      outputDir = resolveLoggedRunPath(rootDir, runsRoot, line.slice("OUTPUT_DIR=".length));
     if (line.startsWith("TOTAL_QUERIES="))
       totalQueries = Number.parseInt(line.slice("TOTAL_QUERIES=".length).trim(), 10);
     if (line.startsWith("INDEX_PATH=")) indexPath = line.slice("INDEX_PATH=".length).trim();
@@ -1305,7 +1313,9 @@ export function loadBenchSnapshot(options?: {
     }
   }
 
-  const logDirs = [...discoveredLogDirPaths].map(parseLogDir);
+  const logDirs = [...discoveredLogDirPaths].map((logDirPath) =>
+    parseLogDir(rootDir, runsRoot, logDirPath),
+  );
 
   const logByOutputDir = new Map<string, LogDirInfo>();
   for (const info of logDirs) {

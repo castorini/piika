@@ -327,6 +327,47 @@ void test("loadBenchSnapshot infers BM25 listening from managed state and ready 
   );
 });
 
+void test("loadBenchSnapshot associates unmanaged sharded BM25 logs when OUTPUT_ROOT is root-relative", () => {
+  const root = mkdtempSync(join(tmpdir(), "bench-monitor-sharded-bm25-root-relative-"));
+  const runDir = join(root, "runs", "pi_bm25_benchmark-template_dev_plain_minimal_shared3");
+  const logDir = join(root, "runs", "shared-bm25-benchmark-template-dev-sh3");
+  mkdirSync(join(runDir, "shard-runs", "shard_01"), { recursive: true });
+  mkdirSync(join(runDir, "shard-queries"), { recursive: true });
+  mkdirSync(logDir, { recursive: true });
+
+  writeFileSync(
+    join(logDir, "run.log"),
+    [
+      "BENCHMARK=benchmark-template",
+      "QUERY_SET=dev",
+      "MODEL=openai-codex/gpt-5.4-mini",
+      "OUTPUT_ROOT=runs/pi_bm25_benchmark-template_dev_plain_minimal_shared3",
+      "SHARD_COUNT=3",
+      "TOTAL_QUERIES=3",
+      "Starting shared BM25 RPC daemon on 127.0.0.1:50500",
+      "Shared BM25 RPC daemon ready. Log: bm25_server.log",
+      "Starting shard execution round 1 for 3 shard(s)",
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+  writeFileSync(
+    join(logDir, "bm25_server.log"),
+    '{"type":"server_ready","transport":"tcp","host":"127.0.0.1","port":50500,"timing_ms":{"init":123}}\n',
+    "utf8",
+  );
+  writeFileSync(join(logDir, "shard_01.log"), "[1/1] Running query demo\n", "utf8");
+
+  const snapshot = loadBenchSnapshot({ rootDir: root });
+  assert.equal(snapshot.runs.length, 1);
+  assert.equal(snapshot.runs[0]?.runDir, runDir);
+  assert.equal(snapshot.runs[0]?.bm25.ready, true);
+  assert.equal(snapshot.runs[0]?.bm25.listening, true);
+  assert.equal(snapshot.runs[0]?.bm25.host, "127.0.0.1");
+  assert.equal(snapshot.runs[0]?.bm25.port, 50500);
+  assert.equal(snapshot.runs[0]?.launchTopology, "sharded-shared-bm25");
+});
+
 void test("loadBenchSnapshot does not report BM25 listening for terminal managed runs", () => {
   const root = mkdtempSync(join(tmpdir(), "bench-monitor-bm25-dead-"));
   const runDir = join(root, "runs", "pi_bm25_benchmark-template_dev_plain_minimal");

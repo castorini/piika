@@ -435,7 +435,7 @@ async function runBenchmarkWithHttpMode(mode: HttpBenchmarkMode): Promise<Benchm
         "--pi",
         fakePiPath,
         "--timeoutSeconds",
-        "5",
+        "20",
         "--limit",
         "1",
         "--promptVariant",

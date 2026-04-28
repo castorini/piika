@@ -26,6 +26,7 @@ type BenchTuiOptions = {
   runsDir?: string;
   qrelsPath?: string;
   refreshMs?: number;
+  getRows?: () => number;
 };
 
 type RunFilterMode = "all" | "active" | "managed" | "finished" | "failed";
@@ -195,6 +196,7 @@ class BenchDashboard implements Component {
   private bannerMessage?: string;
   private filterMode: RunFilterMode = "all";
   private sortMode: RunSortMode = "activity";
+  private renderedRuns: BenchRunSnapshot[] = [];
 
   constructor(options: BenchTuiOptions, onQuit: () => void, onRefresh: () => void) {
     this.options = options;
@@ -207,10 +209,6 @@ class BenchDashboard implements Component {
   }
 
   handleInput(data: string): void {
-    const snapshot = loadBenchSnapshot(this.options);
-    const runs = sortRuns(filterRuns(snapshot.runs, this.filterMode), this.sortMode);
-    const count = runs.length;
-
     if (matchesKey(data, "ctrl+c") || matchesKey(data, "q") || matchesKey(data, "escape")) {
       this.onQuit();
       return;
@@ -236,26 +234,32 @@ class BenchDashboard implements Component {
       return;
     }
 
+    const count = this.renderedRuns.length;
+
     if (count === 0) return;
 
     if (matchesKey(data, "down") || matchesKey(data, "j")) {
       this.selectedIndex = (this.selectedIndex + 1) % count;
+      this.onRefresh();
       return;
     }
     if (matchesKey(data, "up") || matchesKey(data, "k")) {
       this.selectedIndex = (this.selectedIndex - 1 + count) % count;
+      this.onRefresh();
       return;
     }
     if (matchesKey(data, "home")) {
       this.selectedIndex = 0;
+      this.onRefresh();
       return;
     }
     if (matchesKey(data, "end")) {
       this.selectedIndex = count - 1;
+      this.onRefresh();
       return;
     }
     if (matchesKey(data, "x")) {
-      const run = runs[this.selectedIndex];
+      const run = this.renderedRuns[this.selectedIndex];
       if (!run?.managedRunId) {
         this.bannerMessage = "Selected run is not supervisor-managed.";
         this.onRefresh();
@@ -275,7 +279,7 @@ class BenchDashboard implements Component {
       return;
     }
     if (matchesKey(data, "l")) {
-      const run = runs[this.selectedIndex];
+      const run = this.renderedRuns[this.selectedIndex];
       if (!run?.managedRunId) {
         this.bannerMessage = "Selected run is not supervisor-managed.";
         this.onRefresh();
@@ -295,7 +299,7 @@ class BenchDashboard implements Component {
       return;
     }
     if (matchesKey(data, "a")) {
-      const run = runs[this.selectedIndex];
+      const run = this.renderedRuns[this.selectedIndex];
       if (!run?.managedRunId) {
         this.bannerMessage = "Selected run is not supervisor-managed.";
         this.onRefresh();
@@ -323,6 +327,7 @@ class BenchDashboard implements Component {
   render(width: number): string[] {
     const snapshot = loadBenchSnapshot(this.options);
     const runs = sortRuns(filterRuns(snapshot.runs, this.filterMode), this.sortMode);
+    this.renderedRuns = runs;
     if (runs.length === 0) {
       return [
         pad(theme.chrome(` pi-serini benchmark monitor `), width),
@@ -337,8 +342,9 @@ class BenchDashboard implements Component {
     const selected = runs[this.selectedIndex];
     const leftWidth = Math.max(34, Math.min(56, Math.floor(width * 0.36)));
 
-    const lines: string[] = [];
-    lines.push(
+    const maxRows = Math.max(5, this.options.getRows?.() ?? Number.POSITIVE_INFINITY);
+    const chromeLines: string[] = [];
+    chromeLines.push(
       pad(
         theme.chrome(
           ` pi-serini benchmark monitor  runs=${runs.length}/${snapshot.runs.length}  filter=${this.filterMode}  sort=${this.sortMode}  updated=${new Date(snapshot.generatedAt).toLocaleTimeString()}  refresh=${Math.round((this.options.refreshMs ?? 2000) / 1000)}s `,
@@ -346,7 +352,7 @@ class BenchDashboard implements Component {
         width,
       ),
     );
-    lines.push(
+    chromeLines.push(
       pad(
         `${theme.dim("keys:")} ${theme.label("q")} quit  ${theme.label("r")} refresh  ${theme.label("a")} approve retry  ${theme.label("x")} kill  ${theme.label("l")} relaunch  ${theme.label("f")} filter  ${theme.label("s")} sort`,
         width,
@@ -358,24 +364,54 @@ class BenchDashboard implements Component {
         : /approved|retry/i.test(this.bannerMessage)
           ? theme.accent(` ${this.bannerMessage} `)
           : theme.info(` ${this.bannerMessage} `);
-      lines.push(pad(styledBanner, width));
+      chromeLines.push(pad(styledBanner, width));
     }
-    lines.push(pad(hr(width), width));
+    chromeLines.push(pad(hr(width), width));
 
-    const leftLines = this.renderRunsList(runs, leftWidth);
-    const rightLines = this.renderRunDetails(selected, Math.max(1, width - leftWidth - 2));
-    lines.push(...combineColumns(leftLines, rightLines, leftWidth, width));
-    return lines;
+    const contentHeight = Math.max(0, maxRows - chromeLines.length);
+    const leftLines = this.renderRunsList(runs, leftWidth, contentHeight);
+    const rightLines = this.clipLines(
+      this.renderRunDetails(selected, Math.max(1, width - leftWidth - 2)),
+      contentHeight,
+      Math.max(1, width - leftWidth - 2),
+    );
+    return [...chromeLines, ...combineColumns(leftLines, rightLines, leftWidth, width)].slice(
+      0,
+      maxRows,
+    );
   }
 
-  private renderRunsList(runs: BenchRunSnapshot[], width: number): string[] {
+  private clipLines(lines: string[], maxRows: number, width: number): string[] {
+    if (maxRows <= 0) return [];
+    if (lines.length <= maxRows) return lines;
+    const visible = lines.slice(0, maxRows);
+    visible[maxRows - 1] = pad(theme.dim(`… ${lines.length - maxRows} more line(s)`), width);
+    return visible;
+  }
+
+  private renderRunsList(runs: BenchRunSnapshot[], width: number, maxRows: number): string[] {
     const lines: string[] = [];
     lines.push(hr(width, "Runs"));
     lines.push(
       pad(`${theme.dim("status")}  ${theme.dim("progress")}  ${theme.dim("model")}`, width),
     );
     lines.push(pad(theme.dim("──────  ────────  ─────"), width));
-    runs.forEach((run, index) => {
+
+    if (maxRows <= lines.length) return lines.slice(0, maxRows);
+
+    const rowsPerRun = 3;
+    const maxVisibleRuns = Math.max(1, Math.floor((maxRows - lines.length) / rowsPerRun));
+    const startIndex = Math.max(
+      0,
+      Math.min(
+        this.selectedIndex - Math.floor(maxVisibleRuns / 2),
+        Math.max(0, runs.length - maxVisibleRuns),
+      ),
+    );
+    const visibleRuns = runs.slice(startIndex, startIndex + maxVisibleRuns);
+
+    visibleRuns.forEach((run, offset) => {
+      const index = startIndex + offset;
       const isSelected = index === this.selectedIndex;
       const marker = isSelected ? theme.header("❯") : theme.dim("·");
       const status = statusBadge(run.status);
@@ -403,7 +439,13 @@ class BenchDashboard implements Component {
         pad(isSelected ? theme.selectedSecondary(tertiaryText) : theme.dim(tertiaryText), width),
       );
     });
-    return lines;
+
+    if (runs.length > maxVisibleRuns && lines.length < maxRows) {
+      const endIndex = Math.min(runs.length, startIndex + maxVisibleRuns);
+      lines.push(pad(theme.dim(`showing ${startIndex + 1}-${endIndex}/${runs.length}`), width));
+    }
+
+    return lines.slice(0, maxRows);
   }
 
   private renderRunDetails(run: BenchRunSnapshot, width: number): string[] {
@@ -563,8 +605,7 @@ class BenchDashboard implements Component {
     );
     if (run.isSharded) {
       lines.push(hr(width, "Shards"));
-      const shardLines = run.shards.length > 0 ? run.shards.slice(0, 6) : [];
-      for (const shard of shardLines) {
+      for (const shard of run.shards) {
         const summary = `${shard.name} ${shardBadge(shard.status)} ${theme.label(`${shard.progressCompleted}/${shard.progressTotal ?? "?"}`)} current=${shard.currentQueryId ?? "-"}`;
         lines.push(pad(truncateToWidth(summary, width, ""), width));
         lines.push(
@@ -631,7 +672,7 @@ export function startBenchTui(options?: BenchTuiOptions): void {
 
   const refresh = () => tui.requestRender();
   const dashboard = new BenchDashboard(
-    options ?? {},
+    { ...options, getRows: () => terminal.rows },
     () => {
       void shutdown(0);
     },

@@ -14,6 +14,9 @@
 
 ### Fixed
 
+- Fixed benchmark launches for Pi 0.70.5 by upgrading the local Pi packages and using `--no-builtin-tools` instead of `--no-tools` when an explicit extension is loaded, preserving BM25 extension tools while still disabling built-in coding tools.
+- Fixed `bench:status` BM25 liveness detection for shared-BM25 run logs that contain root-relative paths, preventing finished or active BM25 runs from being reported as down because path resolution pointed outside the repository.
+- Fixed `bench:tui` responsiveness and rendering for larger sharded runs by avoiding synchronous run rescans on navigation/quit keys, showing all shards instead of a hardcoded six-shard slice, and clipping/pinning dashboard chrome to the terminal height.
 - Fixed sharded shared-BM25 merge behavior in `src/orchestration/query_set_sharded_shared_bm25.ts` so merged runs no longer abort when shard-local `benchmark_manifest_snapshot.json` and `run_setup.json` differ. The merge path now skips shard-local metadata copies, synthesizes canonical merged-level metadata for the full query set, and has focused regression coverage in `tests/query_set_sharded_shared_bm25.test.ts`.
 - Fixed calibration computation to include the final partial confidence bin instead of silently dropping the tail of the sample when the evaluation count is not an exact multiple of the target bin size.
 

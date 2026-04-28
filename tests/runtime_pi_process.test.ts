@@ -12,7 +12,7 @@ void test("buildPiJsonCommandArgs includes extension wiring only when provided",
       extensionPath: "src/extensions/pi_search.ts",
     }),
     [
-      "--no-tools",
+      "--no-builtin-tools",
       "--no-session",
       "--no-skills",
       "-e",

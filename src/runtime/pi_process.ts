@@ -22,7 +22,11 @@ export function buildPiJsonCommandArgs(options: {
   prompt: string;
   extensionPath?: string;
 }): string[] {
-  const args = ["--no-tools", "--no-session", "--no-skills"];
+  const args = [
+    options.extensionPath ? "--no-builtin-tools" : "--no-tools",
+    "--no-session",
+    "--no-skills",
+  ];
   if (options.extensionPath) {
     args.push("-e", options.extensionPath);
   }
