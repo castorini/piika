@@ -36,7 +36,7 @@ That includes:
 Current ownership layout:
 
 - `src/pi-search/protocol/`
-  - `ajv.ts`
+  - `validation.ts`
   - `errors.ts`
   - `parse.ts`
   - `schemas.ts`

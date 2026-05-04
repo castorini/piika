@@ -1,6 +1,5 @@
-import type { Static, TSchema } from "@sinclair/typebox";
-import type { ValidateFunction } from "ajv";
-import { piSearchAjv } from "../../protocol/ajv";
+import type { Static, TSchema } from "typebox";
+import { compileJsonValidator } from "../../protocol/validation";
 import { PiSearchBackendInvalidResponseError, PiSearchBackendMalformedJsonError } from "./errors";
 import {
   SearchBackendCapabilitiesSchema,
@@ -11,14 +10,13 @@ import {
 function createBackendValidator<TSchemaType extends TSchema>(
   schema: TSchemaType,
 ): (value: unknown, label: string) => Static<TSchemaType> {
-  const validate: ValidateFunction<Static<TSchemaType>> =
-    piSearchAjv.compile<Static<TSchemaType>>(schema);
+  const validator = compileJsonValidator(schema);
 
   return (value: unknown, label: string): Static<TSchemaType> => {
-    if (validate(value)) {
-      return value as Static<TSchemaType>;
+    if (validator.check(value)) {
+      return value;
     }
-    throw new PiSearchBackendInvalidResponseError(label, validate.errors);
+    throw new PiSearchBackendInvalidResponseError(label, validator.errors(value));
   };
 }
 

@@ -1,13 +1,33 @@
-import Ajv, { type ErrorObject, type ValidateFunction } from "ajv";
-import type { Static, TSchema } from "@sinclair/typebox";
+import type { Static, TSchema } from "typebox";
+import { Compile } from "typebox/compile";
+import type { TLocalizedValidationError } from "typebox/error";
 
-const ajv = new Ajv({
-  allErrors: true,
-  allowUnionTypes: true,
-  strict: false,
-});
+export type JsonValidationError = {
+  instancePath: string;
+  message?: string;
+};
 
-function formatJsonValidationError(errors: ErrorObject[] | null | undefined): string {
+export type CompiledJsonValidator<T> = {
+  check: (value: unknown) => value is T;
+  errors: (value: unknown) => JsonValidationError[];
+  validate: (value: unknown, label: string) => T;
+};
+
+function normalizeJsonValidationErrors(
+  errors: Iterable<TLocalizedValidationError> | null | undefined,
+): JsonValidationError[] {
+  if (!errors) {
+    return [];
+  }
+  return Array.from(errors, (error) => ({
+    instancePath: error.instancePath || "/",
+    message: error.message,
+  }));
+}
+
+export function formatJsonValidationError(
+  errors: JsonValidationError[] | null | undefined,
+): string {
   if (!errors || errors.length === 0) {
     return "schema validation failed without detailed errors.";
   }
@@ -32,23 +52,39 @@ export type JsonValidator<T> = {
   parse: (text: string, label: string) => T;
 };
 
-export function createJsonValidator<TSchemaType extends TSchema>(
+export function compileJsonValidator<TSchemaType extends TSchema>(
   schema: TSchemaType,
-): JsonValidator<Static<TSchemaType>> {
-  const validateFn: ValidateFunction<Static<TSchemaType>> =
-    ajv.compile<Static<TSchemaType>>(schema);
+): CompiledJsonValidator<Static<TSchemaType>> {
+  const validator = Compile(schema);
+
+  const errors = (value: unknown): JsonValidationError[] =>
+    normalizeJsonValidationErrors(validator.Errors(value));
 
   const validate = (value: unknown, label: string): Static<TSchemaType> => {
-    if (validateFn(value)) {
+    if (validator.Check(value)) {
       return value as Static<TSchemaType>;
     }
-    throw new Error(`Invalid ${label}: ${formatJsonValidationError(validateFn.errors)}`);
+    throw new Error(`Invalid ${label}: ${formatJsonValidationError(errors(value))}`);
   };
 
   return {
+    check(value: unknown): value is Static<TSchemaType> {
+      return validator.Check(value);
+    },
+    errors,
     validate,
+  };
+}
+
+export function createJsonValidator<TSchemaType extends TSchema>(
+  schema: TSchemaType,
+): JsonValidator<Static<TSchemaType>> {
+  const validator = compileJsonValidator(schema);
+
+  return {
+    validate: validator.validate,
     parse(text: string, label: string): Static<TSchemaType> {
-      return validate(parseJsonText(text, label), label);
+      return validator.validate(parseJsonText(text, label), label);
     },
   };
 }

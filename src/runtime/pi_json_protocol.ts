@@ -1,4 +1,4 @@
-import { Type, type Static } from "@sinclair/typebox";
+import { Type, type Static } from "typebox";
 import { createJsonValidator } from "../lib/json_validation";
 
 const PiEventSchema = Type.Object(

@@ -1,4 +1,4 @@
-import type { ErrorObject } from "ajv";
+import type { JsonValidationError } from "./validation";
 
 export type PiSearchProtocolErrorCode =
   | "malformed_json"
@@ -15,7 +15,7 @@ export type PiSearchProtocolErrorMetadata = {
   fieldPath?: string;
 };
 
-function formatValidationErrors(errors: ErrorObject[] | null | undefined): string {
+function formatValidationErrors(errors: JsonValidationError[] | null | undefined): string {
   if (!errors || errors.length === 0) {
     return "schema validation failed without detailed errors.";
   }
@@ -27,14 +27,16 @@ function formatValidationErrors(errors: ErrorObject[] | null | undefined): strin
     .join("; ");
 }
 
-function formatDetail(detail: string | ErrorObject[] | null | undefined): string {
+function formatDetail(detail: string | JsonValidationError[] | null | undefined): string {
   if (typeof detail === "string") {
     return detail;
   }
   return formatValidationErrors(detail);
 }
 
-function extractFieldPath(detail: string | ErrorObject[] | null | undefined): string | undefined {
+function extractFieldPath(
+  detail: string | JsonValidationError[] | null | undefined,
+): string | undefined {
   if (!detail || typeof detail === "string" || detail.length === 0) {
     return undefined;
   }
@@ -78,7 +80,7 @@ export class PiSearchMalformedJsonError extends PiSearchProtocolValidationError 
 export class PiSearchInvalidToolArgumentsError extends PiSearchProtocolValidationError {
   constructor(
     label: string,
-    detail: string | ErrorObject[] | null | undefined,
+    detail: string | JsonValidationError[] | null | undefined,
     metadata: PiSearchProtocolErrorMetadata = {},
   ) {
     super("invalid_tool_arguments", `Invalid ${label}: ${formatDetail(detail)}`, {
@@ -93,7 +95,7 @@ export class PiSearchInvalidToolArgumentsError extends PiSearchProtocolValidatio
 export class PiSearchInvalidToolResultError extends PiSearchProtocolValidationError {
   constructor(
     label: string,
-    detail: string | ErrorObject[] | null | undefined,
+    detail: string | JsonValidationError[] | null | undefined,
     metadata: PiSearchProtocolErrorMetadata = {},
   ) {
     super("invalid_tool_result", `Invalid ${label}: ${formatDetail(detail)}`, {

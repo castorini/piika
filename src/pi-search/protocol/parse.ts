@@ -1,6 +1,5 @@
-import type { Static, TSchema } from "@sinclair/typebox";
-import type { ValidateFunction } from "ajv";
-import { piSearchAjv } from "./ajv";
+import type { Static, TSchema } from "typebox";
+import { compileJsonValidator } from "./validation";
 import { PiSearchInvalidToolResultError, PiSearchMalformedJsonError } from "./errors";
 import {
   ReadDocumentPayloadSchema,
@@ -17,8 +16,7 @@ function createProtocolParser<TSchemaType extends TSchema>(
   schema: TSchemaType,
   metadata: ProtocolParserMetadata,
 ): (text: string, label: string) => Static<TSchemaType> {
-  const validate: ValidateFunction<Static<TSchemaType>> =
-    piSearchAjv.compile<Static<TSchemaType>>(schema);
+  const validator = compileJsonValidator(schema);
 
   return (text: string, label: string): Static<TSchemaType> => {
     let value: unknown;
@@ -31,10 +29,10 @@ function createProtocolParser<TSchemaType extends TSchema>(
         schemaName: metadata.schemaName,
       });
     }
-    if (validate(value)) {
-      return value as Static<TSchemaType>;
+    if (validator.check(value)) {
+      return value;
     }
-    throw new PiSearchInvalidToolResultError(label, validate.errors, {
+    throw new PiSearchInvalidToolResultError(label, validator.errors(value), {
       toolName: metadata.toolName,
       target: "payload",
       schemaName: metadata.schemaName,

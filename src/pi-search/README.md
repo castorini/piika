@@ -96,7 +96,7 @@ This is package-owned prompt content for the `pi-search` retrieval flow, not gen
 
 ### `protocol/`
 
-Owns extension-facing schemas, Ajv wiring, parsers, protocol error types, and typed detail extractors.
+Owns extension-facing schemas, TypeBox validation wiring, parsers, protocol error types, and typed detail extractors.
 
 Key responsibilities:
 
