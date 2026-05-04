@@ -1,6 +1,6 @@
-import type { ErrorObject } from "ajv";
+import type { JsonValidationError } from "../../protocol/validation";
 
-function formatValidationErrors(errors: ErrorObject[] | null | undefined): string {
+function formatValidationErrors(errors: JsonValidationError[] | null | undefined): string {
   if (!errors || errors.length === 0) {
     return "schema validation failed without detailed errors.";
   }
@@ -12,7 +12,7 @@ function formatValidationErrors(errors: ErrorObject[] | null | undefined): strin
     .join("; ");
 }
 
-function formatDetail(detail: string | ErrorObject[] | null | undefined): string {
+function formatDetail(detail: string | JsonValidationError[] | null | undefined): string {
   if (typeof detail === "string") {
     return detail;
   }
@@ -34,7 +34,7 @@ export class PiSearchBackendMalformedJsonError extends PiSearchBackendError {
 }
 
 export class PiSearchBackendInvalidResponseError extends PiSearchBackendError {
-  constructor(label: string, detail: string | ErrorObject[] | null | undefined) {
+  constructor(label: string, detail: string | JsonValidationError[] | null | undefined) {
     super(`Invalid ${label}: ${formatDetail(detail)}`);
     this.name = "PiSearchBackendInvalidResponseError";
   }

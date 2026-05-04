@@ -1,6 +1,5 @@
-import { Type, type Static } from "@sinclair/typebox";
-import type { ValidateFunction } from "ajv";
-import { piSearchAjv } from "./protocol/ajv";
+import { Type, type Static } from "typebox";
+import { compileJsonValidator, type JsonValidationError } from "./protocol/validation";
 
 const PiSearchSharedRpcBackendConfigSchema = Type.Object(
   {
@@ -88,11 +87,9 @@ export const PiSearchExtensionConfigSchema = Type.Object(
 
 export type PiSearchExtensionConfig = Static<typeof PiSearchExtensionConfigSchema>;
 
-const validatePiSearchExtensionConfig: ValidateFunction<PiSearchExtensionConfig> =
-  piSearchAjv.compile<PiSearchExtensionConfig>(PiSearchExtensionConfigSchema);
+const piSearchExtensionConfigValidator = compileJsonValidator(PiSearchExtensionConfigSchema);
 
-function formatValidationErrors(): string {
-  const errors = validatePiSearchExtensionConfig.errors;
+function formatValidationErrors(errors: JsonValidationError[]): string {
   if (!errors || errors.length === 0) {
     return "schema validation failed without detailed errors.";
   }
@@ -181,10 +178,14 @@ export function parsePiSearchExtensionConfig(text: string): PiSearchExtensionCon
   } catch (error) {
     throw new Error(`Failed to parse PI_SEARCH_EXTENSION_CONFIG: ${text}\n${String(error)}`);
   }
-  if (validatePiSearchExtensionConfig(value)) {
-    return value as PiSearchExtensionConfig;
+  if (piSearchExtensionConfigValidator.check(value)) {
+    return value;
   }
-  throw new Error(`Invalid PI_SEARCH_EXTENSION_CONFIG: ${formatValidationErrors()}`);
+  throw new Error(
+    `Invalid PI_SEARCH_EXTENSION_CONFIG: ${formatValidationErrors(
+      piSearchExtensionConfigValidator.errors(value),
+    )}`,
+  );
 }
 
 export function resolvePiSearchExtensionConfigFromEnv(

@@ -42,10 +42,9 @@
   "dependencies": {
     "@mariozechner/pi-coding-agent": "^0.70.5",
     "@mariozechner/pi-tui": "^0.70.5",
-    "@sinclair/typebox": "^0.34.48",
-    "ajv": "^8.17.1",
     "chalk": "^5.6.2",
-    "tsx": "^4.20.6"
+    "tsx": "^4.20.6",
+    "typebox": "^1.1.24"
   },
   "devDependencies": {
     "@types/node": "^24.5.2",

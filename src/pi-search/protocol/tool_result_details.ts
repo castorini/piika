@@ -1,6 +1,5 @@
-import { Type, type Static } from "@sinclair/typebox";
-import type { ValidateFunction } from "ajv";
-import { piSearchAjv } from "./ajv";
+import { Type, type Static } from "typebox";
+import { compileJsonValidator } from "./validation";
 
 const SearchToolResultDetailsSchema = Type.Object(
   {
@@ -10,10 +9,7 @@ const SearchToolResultDetailsSchema = Type.Object(
   { additionalProperties: true },
 );
 
-type SearchToolResultDetails = Static<typeof SearchToolResultDetailsSchema>;
-
-const validateSearchToolResultDetails: ValidateFunction<SearchToolResultDetails> =
-  piSearchAjv.compile<SearchToolResultDetails>(SearchToolResultDetailsSchema);
+const searchToolResultDetailsValidator = compileJsonValidator(SearchToolResultDetailsSchema);
 
 const PiSearchFailureMetadataSchema = Type.Object(
   {
@@ -41,27 +37,26 @@ const PiSearchFailureToolResultDetailsSchema = Type.Object(
 );
 
 export type PiSearchFailureMetadata = Static<typeof PiSearchFailureMetadataSchema>;
-type PiSearchFailureToolResultDetails = Static<typeof PiSearchFailureToolResultDetailsSchema>;
-
-const validatePiSearchFailureToolResultDetails: ValidateFunction<PiSearchFailureToolResultDetails> =
-  piSearchAjv.compile<PiSearchFailureToolResultDetails>(PiSearchFailureToolResultDetailsSchema);
+const piSearchFailureToolResultDetailsValidator = compileJsonValidator(
+  PiSearchFailureToolResultDetailsSchema,
+);
 
 export function extractRetrievedDocidsFromPiSearchToolDetails(details: unknown): string[] {
-  if (!validateSearchToolResultDetails(details)) {
+  if (!searchToolResultDetailsValidator.check(details)) {
     return [];
   }
   return details.retrievedDocids;
 }
 
 export function extractPreviewedDocidsFromPiSearchToolDetails(details: unknown): string[] {
-  if (!validateSearchToolResultDetails(details)) {
+  if (!searchToolResultDetailsValidator.check(details)) {
     return [];
   }
   return details.previewedDocids ?? [];
 }
 
 export function extractPiSearchFailureMetadata(details: unknown): PiSearchFailureMetadata | null {
-  if (!validatePiSearchFailureToolResultDetails(details)) {
+  if (!piSearchFailureToolResultDetailsValidator.check(details)) {
     return null;
   }
   return details.piSearchFailure;
