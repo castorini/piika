@@ -291,6 +291,7 @@ Legacy shell scripts under `scripts/` still work, but they are compatibility shi
 
 ## Read more
 
+- [Project page](https://ricky42613.github.io/piserini.html)
 - [Running benchmarks](docs/running-benchmarks.md)
 - [Evaluation semantics](docs/evaluation.md)
 - [Reproducibility](docs/reproducibility.md)
