@@ -1,4 +1,4 @@
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { resolvePiSearchExtensionConfigFromEnv, type PiSearchExtensionConfig } from "./config";
 import {
   BENCHMARK_TIMEOUT_SECONDS,

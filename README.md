@@ -42,7 +42,7 @@ npm run bench -- benchmarks
 
 ## Requirements
 
-- [`pi`](https://pi.dev/) installed and logged in
+- [`pi`](https://pi.dev/) `0.74.0` or newer installed and logged in
 - Node.js with `npx`
 - Java 21+
 - `python3`
@@ -55,6 +55,8 @@ Supported developer environments:
 - Linux
 
 If Java is installed in a non-standard location, set `JAVA_HOME` explicitly before running setup or benchmark commands.
+
+Pi packages now live under the `@earendil-works/*` npm namespace. This repo depends on `@earendil-works/pi-coding-agent` and `@earendil-works/pi-tui`; use that namespace for any local extension or SDK imports rather than the retired `@mariozechner/*` package names.
 
 ## Quickstart
 

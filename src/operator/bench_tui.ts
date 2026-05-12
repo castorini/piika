@@ -6,7 +6,7 @@ import {
   truncateToWidth,
   visibleWidth,
   type Component,
-} from "@mariozechner/pi-tui";
+} from "@earendil-works/pi-tui";
 
 import {
   formatDuration,

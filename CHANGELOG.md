@@ -9,6 +9,7 @@
 
 ### Changed
 
+- Changed Pi package dependencies and imports from the old `@mariozechner/*` npm namespace to the new `@earendil-works/*` namespace, updating `@earendil-works/pi-coding-agent` and `@earendil-works/pi-tui` to `^0.74.0` and refreshing `package-lock.json`.
 - Changed runtime JSON validation from `@sinclair/typebox` plus Ajv to TypeBox v1's native compiler APIs, leaving `typebox` as the only schema/validation dependency while preserving strict process-boundary validation and protocol error metadata.
 - Changed judge-evaluation calibration semantics to use the run response's self-reported confidence against gold-answer correctness, matching BrowseComp-Plus' intended calibration contract more closely than the previous judge-confidence-based interpretation.
 - Changed judge-evaluation summary/CSV artifacts to persist response-confidence fields explicitly, including the calibration source and the count of responses that defaulted to `100` confidence for BrowseComp-Plus compatibility when no explicit confidence line was present.
