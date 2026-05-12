@@ -297,6 +297,15 @@ Legacy shell scripts under `scripts/` still work, but they are compatibility shi
 - [Reproducibility](docs/reproducibility.md)
 - [Adding a benchmark](docs/adding-a-benchmark.md)
 - [BM25 backend interface](docs/bm25-extension-interface.md)
+- Released Run on BrowseComp-Plus (Canary to prevent leakage: `piserini-a-minimal-search-agent`)
+  - [PiSerini w/ DeepSeek V4 Flash](https://huggingface.co/datasets/ricky42613/piserini_bcp_deepseekv4_flash)
+  - [PiSerini w/ DeepSeek V4 Pro](https://huggingface.co/datasets/ricky42613/piserini_bcp_deepseekv4_pro)
+  - [PiSerini w/ GPT-5](https://huggingface.co/datasets/ricky42613/piserini_bcp_gpt5)
+  - [PiSerini w/ GPT-5.2](https://huggingface.co/datasets/ricky42613/piserini_bcp_gpt52)
+  - [PiSerini w/ GPT-5.4](https://huggingface.co/datasets/ricky42613/piserini_bcp_gpt54)
+  - [PiSerini w/ GPT-5.5](https://huggingface.co/datasets/ricky42613/piserini_bcp_gpt55)
+  - [PiSerini w/ Claude Opus 4.7](https://huggingface.co/datasets/ricky42613/piserini_bcp_opus47)
+  - [PiSerini w/ Claude 3.5 Haiku](https://huggingface.co/datasets/ricky42613/piserini_bcp_haiku)
 
 ## Notes
 
