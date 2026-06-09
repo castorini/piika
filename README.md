@@ -332,10 +332,6 @@ Legacy shell scripts under `scripts/` still work, but they are compatibility shi
 - Reports now prefer structured run setup metadata from `<run>/run_setup.json` and fall back to legacy launcher logs when needed.
 - Do not track generated benchmark content under `data/`, `indexes/`, `runs/`, `evals/`, or `scratch/`.
 
-## Contact
-
-Jheng-Hong (Matt) YANG: jhyang@stencilzeit.com
-
 ## License
 
 MIT
