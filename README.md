@@ -1,6 +1,6 @@
 <div align="center">
 
-# piika <img src="docs/assets/piika-logo.png" alt="piika logo" width="64">
+# piika <img src="docs/assets/piika-logo.png" alt="piika logo" width="300">
 
 A reusable, reproducible `pi` search-agent workspace
 
