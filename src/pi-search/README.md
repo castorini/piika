@@ -19,6 +19,10 @@ For the current repo-local Anserini integration seam, see:
 
 - `../../docs/bm25-extension-interface.md`
 
+For the Pyserini REST backend, see:
+
+- `../../docs/pyserini-rest-search-provider.md`
+
 ## What lives here
 
 `src/pi-search/` owns the standalone extension contract and package-local behavior.
@@ -128,6 +132,7 @@ Current adapters:
 - `anserini_bm25/`
 - `http_json/`
 - `mock/`
+- `pyserini_rest/`
 - `create.ts`
 
 Important boundary rule:
@@ -176,6 +181,7 @@ Owns shared typed detail structures used by tool handlers and downstream contrac
 - `anserini-bm25`
 - `http-json`
 - `mock`
+- `pyserini-rest`
 
 Important distinction:
 
