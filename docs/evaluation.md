@@ -1,6 +1,6 @@
 # Evaluation semantics
 
-This document explains how retrieval evaluation, judge evaluation, normalized summary artifacts, and report labels work in `pi-serini`.
+This document explains how retrieval evaluation, judge evaluation, normalized summary artifacts, and report labels work in `piika`.
 
 For operator commands, see [running-benchmarks.md](./running-benchmarks.md).
 For artifact precedence and provenance, see [reproducibility.md](./reproducibility.md).

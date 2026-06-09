@@ -2,13 +2,17 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Rebranded the repository and documentation from `pi-serini` to Piika, including the new logo and successor note.
+
 ## [0.3.0] - 2026-05-12
 
 ### Added
 
 - Added a BrowseComp-Plus external-run adapter at `src/adapters/import_search_jsonl_run.ts` plus the package script `npm run adapt:search-jsonl-run`, allowing one-JSON-object-per-line search-session artifacts to be normalized into the repo's native run directory format with per-query JSON files, `benchmark_manifest_snapshot.json`, and `run_setup.json`. This makes imported BrowseComp-Plus runs evaluable by both retrieval metrics and the downstream LLM-as-judge pipeline.
 - Added focused regression coverage for the new external-run importer in `tests/import_search_jsonl_run.test.ts` and extracted shared calibration helpers in `src/evaluation/calibration.ts` with focused coverage in `tests/calibration.test.ts`.
-- Added README links from @ricky42613 for the Pi-Serini project page and released BrowseComp-Plus run datasets on Hugging Face, including runs for DeepSeek V4, GPT-5-family, Claude Opus 4.7, and Claude 3.5 Haiku variants.
+- Added README links from @ricky42613 for the Piika project page and released BrowseComp-Plus run datasets on Hugging Face, including runs for DeepSeek V4, GPT-5-family, Claude Opus 4.7, and Claude 3.5 Haiku variants.
 
 ### Changed
 
@@ -62,7 +66,7 @@
 ### Added
 
 - Added a generic `http-json` searcher adapter under `src/pi-search/searcher/adapters/http_json/adapter.ts`, plus explicit extension config support for selecting HTTP-backed `pi-search` backends alongside the existing Anserini BM25 and mock adapters.
-- Added benchmark-harness regression coverage proving that `pi-serini` validates HTTP-backed `pi-search` behavior across the full tool surface, including recoverable `search`, `read_search_results`, and `read_document` failures as well as successful structured-result flows.
+- Added benchmark-harness regression coverage proving that `piika` validates HTTP-backed `pi-search` behavior across the full tool surface, including recoverable `search`, `read_search_results`, and `read_document` failures as well as successful structured-result flows.
 
 ### Changed
 
@@ -79,12 +83,12 @@
 
 - Added a dedicated `pi-search` protocol contract layer under `src/pi-search/protocol/`, including TypeBox-authored schemas, a shared Ajv runtime, explicit protocol error types, schema-backed payload parsers, and contract helpers for benchmark-harness consumers.
 - Added focused regression coverage for the extracted `pi-search` contract surface, including protocol parser tests, helper/spill module tests, repair-friendly tool failure tests, contract-detail extraction tests, and benchmark-runner integration coverage for recoverable extension failures.
-- Added maintainer-facing contract ownership documentation in `docs/pi-search-contract.md`, documenting that `pi-search` owns the standalone extension contract while `pi-serini` acts as the benchmark-backed validation harness around it.
+- Added maintainer-facing contract ownership documentation in `docs/pi-search-contract.md`, documenting that `pi-search` owns the standalone extension contract while `piika` acts as the benchmark-backed validation harness around it.
 
 ### Changed
 
 - Changed `src/pi-search/extension.ts` from a single mixed-responsibility module into a composition root over extracted `pi-search` subsystems for protocol validation, helper runtime ownership, prompt policy, spill management, cached search state, and tool handlers.
-- Changed `pi-serini` benchmark execution to consume `pi-search`-owned structured result details instead of re-deriving active `pi-search` search docids from rendered tool output, keeping extension contract knowledge under `src/pi-search/`.
+- Changed `piika` benchmark execution to consume `pi-search`-owned structured result details instead of re-deriving active `pi-search` search docids from rendered tool output, keeping extension contract knowledge under `src/pi-search/`.
 - Changed the benchmark runner to record recoverable `pi-search` tool failures as explicit benchmark evidence and to count them in per-query stats without collapsing successful agent recovery into a generic runtime crash.
 
 ### Fixed

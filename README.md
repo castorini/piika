@@ -1,6 +1,8 @@
 <div align="center">
 
-# pi-serini
+<img src="docs/assets/piika-logo.png" alt="Piika logo" width="180">
+
+# Piika
 
 A reusable, reproducible `pi` search-agent workspace
 
@@ -13,7 +15,9 @@ _yours_.
 
 </div>
 
-`pi-serini` is a reusable, benchmark-driven `pi` search-agent workspace for index-driven BM25 retrieval, agentic search, and benchmark-aware evaluation.
+`piika` is a reusable, benchmark-driven `pi` search-agent workspace for index-driven BM25 retrieval, agentic search, and benchmark-aware evaluation.
+
+Piika is the successor to `pi-serini`, carrying forward the same benchmark-driven search-agent workflow under the new repository name.
 
 Current release status: `v0.3.0` supports index-driven benchmark and agentic search workflows for MS MARCO v1 Passage (`dl19`, `dl20`) and BrowseComp-Plus, with `benchmark-template` included as a tiny local end-to-end demo benchmark. This release tracks the Pi package namespace migration to `@earendil-works/*` and requires `pi` 0.74.0 or newer.
 
@@ -301,20 +305,20 @@ Legacy shell scripts under `scripts/` still work, but they are compatibility shi
 - [Adding a benchmark](docs/adding-a-benchmark.md)
 - [BM25 backend interface](docs/bm25-extension-interface.md)
 - Released Run on BrowseComp-Plus (Canary to prevent leakage: `piserini-a-minimal-search-agent`)
-  - [PiSerini w/ DeepSeek V4 Flash](https://huggingface.co/datasets/ricky42613/piserini_bcp_deepseekv4_flash)
-  - [PiSerini w/ DeepSeek V4 Pro](https://huggingface.co/datasets/ricky42613/piserini_bcp_deepseekv4_pro)
-  - [PiSerini w/ GPT-5](https://huggingface.co/datasets/ricky42613/piserini_bcp_gpt5)
-  - [PiSerini w/ GPT-5.2](https://huggingface.co/datasets/ricky42613/piserini_bcp_gpt52)
-  - [PiSerini w/ GPT-5.4](https://huggingface.co/datasets/ricky42613/piserini_bcp_gpt54)
-  - [PiSerini w/ GPT-5.5](https://huggingface.co/datasets/ricky42613/piserini_bcp_gpt55)
-  - [PiSerini w/ Claude Opus 4.7](https://huggingface.co/datasets/ricky42613/piserini_bcp_opus47)
-  - [PiSerini w/ Claude 3.5 Haiku](https://huggingface.co/datasets/ricky42613/piserini_bcp_haiku)
+  - [Piika w/ DeepSeek V4 Flash](https://huggingface.co/datasets/ricky42613/piserini_bcp_deepseekv4_flash)
+  - [Piika w/ DeepSeek V4 Pro](https://huggingface.co/datasets/ricky42613/piserini_bcp_deepseekv4_pro)
+  - [Piika w/ GPT-5](https://huggingface.co/datasets/ricky42613/piserini_bcp_gpt5)
+  - [Piika w/ GPT-5.2](https://huggingface.co/datasets/ricky42613/piserini_bcp_gpt52)
+  - [Piika w/ GPT-5.4](https://huggingface.co/datasets/ricky42613/piserini_bcp_gpt54)
+  - [Piika w/ GPT-5.5](https://huggingface.co/datasets/ricky42613/piserini_bcp_gpt55)
+  - [Piika w/ Claude Opus 4.7](https://huggingface.co/datasets/ricky42613/piserini_bcp_opus47)
+  - [Piika w/ Claude 3.5 Haiku](https://huggingface.co/datasets/ricky42613/piserini_bcp_haiku)
 
 ## Citation
 
 ```bibtex
-@misc{hsu2026rethinkingagenticsearchpiserini,
-  title         = {Rethinking Agentic Search with Pi-Serini: Is Lexical Retrieval Sufficient?},
+@misc{hsu2026rethinkingagenticsearchpiika,
+  title         = {Rethinking Agentic Search with Piika: Is Lexical Retrieval Sufficient?},
   author        = {Tz-Huan Hsu and Jheng-Hong Yang and Jimmy Lin},
   year          = {2026},
   eprint        = {2605.10848},

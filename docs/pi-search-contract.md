@@ -1,6 +1,6 @@
 # `pi-search` contract ownership
 
-This document defines the `v0.2.0` ownership boundary between the standalone `pi-search` extension contract and the surrounding `pi-serini` benchmark harness.
+This document defines the `v0.2.0` ownership boundary between the standalone `pi-search` extension contract and the surrounding `piika` benchmark harness.
 
 ## Why this exists
 
@@ -10,7 +10,7 @@ For a local directory-level maintainer entrypoint and module map, start with:
 
 `pi-search` is intended to be shippable as a standalone extension. That means its tool/protocol contract must be owned inside `src/pi-search/`, not scattered across benchmark runner code.
 
-`pi-serini` then acts as the benchmark-backed validation loop around that contract:
+`piika` then acts as the benchmark-backed validation loop around that contract:
 
 - it runs benchmark workloads through `pi-search`
 - it records failures as benchmark evidence
@@ -56,7 +56,7 @@ Current ownership layout:
 - `src/pi-search/tool_types.ts`
 - `src/pi-search/config.ts`
 
-### `pi-serini` owns
+### `piika` owns
 
 Anything that measures, records, or evaluates the extension in benchmark runs belongs outside `src/pi-search/`.
 
@@ -93,7 +93,7 @@ The recent refactor and harness work established a stronger concrete contract th
 - a backend-agnostic top-level extension surface
 - boundary validation for HTTP-backed responses using the shared searcher contract parsers
 
-`pi-serini` now has benchmark-harness regression coverage proving that it validates the stable `pi-search` contract rather than backend-specific rendered text.
+`piika` now has benchmark-harness regression coverage proving that it validates the stable `pi-search` contract rather than backend-specific rendered text.
 
 In particular, the harness now has explicit coverage for HTTP-backed `pi-search` behavior across the full user-facing tool surface:
 
@@ -112,7 +112,7 @@ That means the current architecture is not only schema-defined; it is benchmark-
 
 ## Contract consumption rule
 
-When `pi-serini` needs to understand `pi-search` output, it should consume a `pi-search`-owned helper or typed detail structure rather than reverse-engineering rendered tool text.
+When `piika` needs to understand `pi-search` output, it should consume a `pi-search`-owned helper or typed detail structure rather than reverse-engineering rendered tool text.
 
 Good:
 
@@ -121,7 +121,7 @@ Good:
 
 Bad:
 
-- parsing rendered search output text in `pi-serini` to rediscover docids
+- parsing rendered search output text in `piika` to rediscover docids
 - duplicating tool result schemas in benchmark runner code
 - introducing new `pi-search`-specific payload readers under `src/orchestration/` or `src/evaluation/`
 
@@ -196,7 +196,7 @@ When adding a new tool or changing a contract field:
 2. Export schema-derived types from the same protocol module.
 3. Add parse/extract helpers under `src/pi-search/protocol/` if benchmark consumers need structured access.
 4. Use those helpers from `src/pi-search/` runtime modules.
-5. If `pi-serini` must interpret the new structured detail, consume the `pi-search` helper rather than re-implementing parsing in the harness.
+5. If `piika` must interpret the new structured detail, consume the `pi-search` helper rather than re-implementing parsing in the harness.
 6. Add regression tests at the owning layer first:
    - protocol tests for schema/parser behavior
    - tool-handler tests for repairable failure wording
@@ -215,4 +215,4 @@ Out of scope unless explicitly expanded later:
 The goal here is narrower and more important:
 
 - make `pi-search` a clear validated extension contract
-- make `pi-serini` the benchmark-backed validation harness around it
+- make `piika` the benchmark-backed validation harness around it
