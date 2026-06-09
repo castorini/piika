@@ -7,6 +7,8 @@ import { PiSearchBackendRuntime } from "../../src/pi-search/searcher/runtime";
 import { SearchSessionStore } from "../../src/pi-search/search_cache";
 import { ManagedTempSpillDir } from "../../src/pi-search/spill";
 import {
+  executeDirectReadDocumentTool,
+  executeDirectSearchTool,
   executeReadDocumentTool,
   executeReadSearchResultsTool,
   executeSearchTool,
@@ -191,6 +193,45 @@ void test("mock adapter can power search and browse through the shared pi-search
 
   assert.match(browseResult.content[0].text, /search_id=/);
   assert.deepEqual(browseResult.details.retrievedDocids, ["doc-1", "doc-2"]);
+
+  cleanup();
+});
+
+void test("direct search returns visible docids without creating a search_id browse dependency", async () => {
+  const { deps, cleanup } = createRuntimeDeps();
+
+  const searchResult = await executeDirectSearchTool(
+    { reason: "direct Pyserini search", query: "analytical engine ada", hits: 2 },
+    undefined,
+    { cwd: "." },
+    deps,
+  );
+
+  assert.match(searchResult.content[0].text, /Returned 2 hits from the Pyserini REST ranking/);
+  assert.doesNotMatch(searchResult.content[0].text, /search_id=/);
+  assert.deepEqual(searchResult.details.retrievedDocids, ["doc-1", "doc-2"]);
+  assert.deepEqual(searchResult.details.previewedDocids, ["doc-1", "doc-2"]);
+  assert.equal(searchResult.details.toolInterface, "pyserini-rest-2tool");
+
+  cleanup();
+});
+
+void test("direct read_document returns a full document without continuation guidance", async () => {
+  const { deps, cleanup } = createRuntimeDeps();
+
+  const result = await executeDirectReadDocumentTool(
+    { reason: "verify full document", docid: "doc-1" },
+    undefined,
+    { cwd: "." },
+    deps,
+  );
+
+  assert.match(result.content[0].text, /docid=doc-1 full document/);
+  assert.match(result.content[0].text, /This line provides extra context\./);
+  assert.doesNotMatch(result.content[0].text, /Continue with read_document/);
+  assert.equal(result.details.docid, "doc-1");
+  assert.equal(result.details.truncated, false);
+  assert.equal(result.details.toolInterface, "pyserini-rest-2tool");
 
   cleanup();
 });

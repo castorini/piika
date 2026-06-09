@@ -11,6 +11,22 @@ export const PlainSearchParamsSchema = Type.Object({
   }),
 });
 
+export const DirectSearchParamsSchema = Type.Object({
+  reason: Type.String({
+    description:
+      "Brief rationale for this search, maximum 100 words. Put the specific clue or follow-up goal first.",
+  }),
+  query: Type.String({
+    description:
+      "Raw query string. Use concise lexical clues instead of long natural-language rewrites.",
+  }),
+  hits: Type.Optional(
+    Type.Number({
+      description: "Maximum number of hits to return directly in this search call. Defaults to 5.",
+    }),
+  ),
+});
+
 export const ReadSearchResultsParamsSchema = Type.Object({
   reason: Type.String({
     description:
@@ -31,6 +47,14 @@ export const ReadDocumentParamsSchema = Type.Object({
     Type.Number({ description: "Line number to start reading from (1-indexed)." }),
   ),
   limit: Type.Optional(Type.Number({ description: "Maximum number of lines to read." })),
+});
+
+export const DirectReadDocumentParamsSchema = Type.Object({
+  reason: Type.String({
+    description:
+      "Brief rationale for opening this document, maximum 100 words. State the candidate clue or fact you expect to verify in this doc.",
+  }),
+  docid: Type.String({ description: "Document id to retrieve in full." }),
 });
 
 export const SearchResultLiteSchema = Type.Object(
@@ -102,8 +126,10 @@ export const ReadDocumentPayloadSchema = Type.Object(
 );
 
 export type PlainSearchParams = Static<typeof PlainSearchParamsSchema>;
+export type DirectSearchParams = Static<typeof DirectSearchParamsSchema>;
 export type ReadSearchResultsParams = Static<typeof ReadSearchResultsParamsSchema>;
 export type ReadDocumentParams = Static<typeof ReadDocumentParamsSchema>;
+export type DirectReadDocumentParams = Static<typeof DirectReadDocumentParamsSchema>;
 export type SearchResultLite = Static<typeof SearchResultLiteSchema>;
 export type SearchResultPreview = Static<typeof SearchResultPreviewSchema>;
 export type RpcTimingMs = Static<typeof RpcTimingMsSchema>;

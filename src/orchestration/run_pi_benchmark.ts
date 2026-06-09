@@ -11,7 +11,11 @@ import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 
 import { attachJsonlLineReader } from "../runtime/jsonl";
-import { buildAnseriniBm25TcpExtensionConfig } from "../pi-search/config";
+import {
+  buildAnseriniBm25TcpExtensionConfig,
+  parsePiSearchExtensionConfig,
+  type PiSearchExtensionConfig,
+} from "../pi-search/config";
 import {
   extractPiSearchFailureMetadata,
   extractPreviewedDocidsFromPiSearchToolDetails,
@@ -20,6 +24,7 @@ import {
 import { startBm25ServerTcp } from "../search-providers/anserini/bm25_server_process";
 import { prepareIsolatedAgentDir } from "../runtime/pi_agent_dir";
 import { formatPiSearchPrompt, type PiSearchPromptVariant } from "../pi-search/agent_prompt";
+import type { PiSearchToolInterface } from "../pi-search/extension";
 import { resolveGitCommitProvenance } from "../runtime/git";
 import { startPiJsonProcess, startPiProcessTimeout } from "../runtime/pi_process";
 import { parsePiEventJsonLine, type PiEvent } from "../runtime/pi_json_protocol";
@@ -41,6 +46,8 @@ type BenchmarkRun = {
     output_dir: string;
     query: string;
     prompt_variant: PiSearchPromptVariant;
+    tool_interface?: PiSearchToolInterface;
+    search_backend_kind?: string;
     bm25_search_tool_mode?: string;
     bm25_render_excerpts?: string;
   };
@@ -94,6 +101,8 @@ type PersistedRunSetup = {
   bm25Threads?: string;
   maxShardAttempts?: string;
   shardRetryMode?: string;
+  toolInterface?: string;
+  searchBackendKind?: string;
 };
 
 type RunPiOptions = {
@@ -117,6 +126,15 @@ type Bm25RpcConnection = {
   };
   stop: () => Promise<void>;
 };
+
+type SearchBackendConnection =
+  | (Bm25RpcConnection & { kind: "bm25-rpc"; config: PiSearchExtensionConfig })
+  | {
+      kind: "external-config";
+      env: Record<string, string>;
+      config: PiSearchExtensionConfig;
+      stop: () => Promise<void>;
+    };
 
 type BenchmarkProgressEvent = {
   ts: number;
@@ -207,6 +225,46 @@ async function getBm25RpcConnection(cwd: string): Promise<Bm25RpcConnection> {
   };
 }
 
+async function getSearchBackendConnection(cwd: string): Promise<SearchBackendConnection> {
+  const rawExtensionConfig = process.env.PI_SEARCH_EXTENSION_CONFIG?.trim();
+  if (rawExtensionConfig) {
+    const config = parsePiSearchExtensionConfig(rawExtensionConfig);
+    if (config.backend.kind !== "anserini-bm25") {
+      return {
+        kind: "external-config",
+        env: {
+          PI_SEARCH_EXTENSION_CONFIG: rawExtensionConfig,
+        },
+        config,
+        stop: async () => {
+          // External backends are owned by the caller.
+        },
+      };
+    }
+  }
+
+  const bm25 = await getBm25RpcConnection(cwd);
+  const config = buildAnseriniBm25TcpExtensionConfig({
+    host: bm25.endpoint.host,
+    port: bm25.endpoint.port,
+  });
+  return {
+    kind: "bm25-rpc",
+    ...bm25,
+    config,
+  };
+}
+
+function parseToolInterface(value: string | undefined): PiSearchToolInterface {
+  const raw = value?.trim() || "pi-serini-3tool";
+  if (raw === "pi-serini-3tool" || raw === "pyserini-rest-2tool") {
+    return raw;
+  }
+  throw new Error(
+    `Invalid tool interface ${raw}. Expected pi-serini-3tool or pyserini-rest-2tool.`,
+  );
+}
+
 const PROMPT_VARIANTS: PiSearchPromptVariant[] = ["plain_minimal"];
 
 function parseArgs(argv: string[]) {
@@ -219,6 +277,7 @@ function parseArgs(argv: string[]) {
     pi: "pi",
     limit: "0",
     timeoutSeconds: "900",
+    toolInterface: process.env.PI_SEARCH_TOOL_INTERFACE?.trim() || "pi-serini-3tool",
   };
 
   for (let i = 0; i < argv.length; i += 1) {
@@ -262,6 +321,7 @@ function parseArgs(argv: string[]) {
     limit: Number.parseInt(out.limit, 10),
     timeoutSeconds: Number.parseInt(out.timeoutSeconds, 10),
     piSearchPromptVariant,
+    toolInterface: parseToolInterface(out.toolInterface),
   };
 }
 
@@ -841,6 +901,8 @@ function finalizeRun(
   model: string,
   outputDir: string,
   piSearchPromptVariant: PiSearchPromptVariant,
+  toolInterface: PiSearchToolInterface,
+  searchBackendKind: string,
   state: QueryRunAccumulator,
   normalizedResults: NormalizedResult[],
   stderrTail: string,
@@ -888,6 +950,8 @@ function finalizeRun(
       output_dir: outputDir,
       query,
       prompt_variant: piSearchPromptVariant,
+      tool_interface: toolInterface,
+      search_backend_kind: searchBackendKind,
     },
     query_id: queryId,
     tool_call_counts: state.toolCallCounts,
@@ -954,6 +1018,8 @@ function buildPersistedRunSetup(args: {
   totalQueries: number;
   timeoutSeconds: number;
   indexPath: string;
+  toolInterface: PiSearchToolInterface;
+  searchBackendKind: string;
 }): PersistedRunSetup {
   return {
     slice: args.querySetId,
@@ -969,6 +1035,8 @@ function buildPersistedRunSetup(args: {
     bm25Threads: resolveEnvValue("PI_BM25_THREADS", "1"),
     maxShardAttempts: resolveEnvValue("MAX_SHARD_ATTEMPTS"),
     shardRetryMode: resolveEnvValue("SHARD_RETRY_MODE"),
+    toolInterface: args.toolInterface,
+    searchBackendKind: args.searchBackendKind,
   };
 }
 
@@ -1009,6 +1077,7 @@ async function main() {
   console.log(`Using indexPath=${args.indexPath}`);
   console.log(`Using timeoutSeconds=${args.timeoutSeconds}`);
   console.log(`Using promptVariant=${args.piSearchPromptVariant}`);
+  console.log(`Using toolInterface=${args.toolInterface}`);
   if (benchmarkManifestSnapshot.git_commit_short) {
     console.log(`Using gitCommit=${benchmarkManifestSnapshot.git_commit_short}`);
   }
@@ -1016,6 +1085,9 @@ async function main() {
   if (args.limit > 0) {
     queries = queries.slice(0, args.limit);
   }
+  const searchBackendConnection = await getSearchBackendConnection(process.cwd());
+  const searchBackendKind = searchBackendConnection.config.backend.kind;
+  console.log(`Using searchBackend=${searchBackendKind}`);
   writeFileSync(
     resolve(args.outputDir, "run_setup.json"),
     `${JSON.stringify(
@@ -1027,6 +1099,8 @@ async function main() {
         totalQueries: queries.length,
         timeoutSeconds: args.timeoutSeconds,
         indexPath: args.indexPath,
+        toolInterface: args.toolInterface,
+        searchBackendKind,
       }),
       null,
       2,
@@ -1046,21 +1120,25 @@ async function main() {
       benchmarkId: args.benchmarkId,
       querySetId: args.querySetId,
       promptVariant: args.piSearchPromptVariant,
+      toolInterface: args.toolInterface,
+      searchBackendKind,
       timeoutSeconds: args.timeoutSeconds,
     },
   });
 
-  const bm25RpcConnection = await getBm25RpcConnection(process.cwd());
-  const bm25RpcEnv = bm25RpcConnection.env;
-  const bm25RpcEndpoint = bm25RpcConnection.endpoint;
-  if (typeof bm25RpcEndpoint.initMs === "number") {
+  if (
+    searchBackendConnection.kind === "bm25-rpc" &&
+    typeof searchBackendConnection.endpoint.initMs === "number"
+  ) {
     console.log(
-      `Using shared BM25 RPC daemon at ${bm25RpcEnv.PI_BM25_RPC_HOST}:${bm25RpcEnv.PI_BM25_RPC_PORT} init_ms=${bm25RpcEndpoint.initMs.toFixed(1)}`,
+      `Using shared BM25 RPC daemon at ${searchBackendConnection.env.PI_BM25_RPC_HOST}:${searchBackendConnection.env.PI_BM25_RPC_PORT} init_ms=${searchBackendConnection.endpoint.initMs.toFixed(1)}`,
+    );
+  } else if (searchBackendConnection.kind === "bm25-rpc") {
+    console.log(
+      `Using external BM25 RPC daemon at ${searchBackendConnection.env.PI_BM25_RPC_HOST}:${searchBackendConnection.env.PI_BM25_RPC_PORT}`,
     );
   } else {
-    console.log(
-      `Using external BM25 RPC daemon at ${bm25RpcEnv.PI_BM25_RPC_HOST}:${bm25RpcEnv.PI_BM25_RPC_PORT}`,
-    );
+    console.log(`Using external pi-search backend config kind=${searchBackendKind}`);
   }
 
   try {
@@ -1106,10 +1184,6 @@ async function main() {
       const queryStartedAt = Date.now();
       let run: BenchmarkRun;
       try {
-        const piSearchExtensionConfig = buildAnseriniBm25TcpExtensionConfig({
-          host: bm25RpcEndpoint.host,
-          port: bm25RpcEndpoint.port,
-        });
         const phase = await runPiOnce({
           piBinary: args.piBinary,
           model: args.model,
@@ -1120,8 +1194,9 @@ async function main() {
           timeoutSeconds: args.timeoutSeconds,
           isolatedAgentDir,
           extraEnv: {
-            ...bm25RpcEnv,
-            PI_SEARCH_EXTENSION_CONFIG: JSON.stringify(piSearchExtensionConfig),
+            ...searchBackendConnection.env,
+            PI_SEARCH_EXTENSION_CONFIG: JSON.stringify(searchBackendConnection.config),
+            PI_SEARCH_TOOL_INTERFACE: args.toolInterface,
           },
           rawEventsPath,
           stderrPath,
@@ -1134,6 +1209,8 @@ async function main() {
           args.model,
           args.outputDir,
           args.piSearchPromptVariant,
+          args.toolInterface,
+          searchBackendKind,
           phase.state,
           phase.normalizedResults,
           phase.stderrTail,
@@ -1155,6 +1232,8 @@ async function main() {
             args.model,
             args.outputDir,
             args.piSearchPromptVariant,
+            args.toolInterface,
+            searchBackendKind,
             error.details.state,
             error.details.normalizedResults,
             message,
@@ -1171,6 +1250,8 @@ async function main() {
             args.model,
             args.outputDir,
             args.piSearchPromptVariant,
+            args.toolInterface,
+            searchBackendKind,
             createQueryRunAccumulator(),
             [],
             message,
@@ -1205,7 +1286,7 @@ async function main() {
       console.log(`[${index + 1}/${queries.length}] Saved stderr to ${stderrPath}`);
     }
   } finally {
-    await bm25RpcConnection.stop();
+    await searchBackendConnection.stop();
   }
 
   const finalRunning = formatRunningRecall(runningRecall);

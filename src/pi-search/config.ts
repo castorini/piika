@@ -55,6 +55,18 @@ const PiSearchHttpJsonBackendConfigSchema = Type.Object(
   { additionalProperties: false },
 );
 
+const PiSearchPyseriniRestBackendConfigSchema = Type.Object(
+  {
+    kind: Type.Literal("pyserini-rest"),
+    baseUrl: Type.String({ minLength: 1 }),
+    index: Type.String({ minLength: 1 }),
+    tokenEnv: Type.Optional(Type.String({ minLength: 1 })),
+    searchMaxDocLength: Type.Optional(Type.Number({ minimum: 1 })),
+    readMode: Type.Optional(Type.Union([Type.Literal("full"), Type.Literal("paginated")])),
+  },
+  { additionalProperties: false },
+);
+
 const PiSearchMockBackendConfigSchema = Type.Object(
   {
     kind: Type.Literal("mock"),
@@ -79,6 +91,7 @@ export const PiSearchExtensionConfigSchema = Type.Object(
       PiSearchSharedRpcBackendConfigSchema,
       PiSearchLocalStdioBackendConfigSchema,
       PiSearchHttpJsonBackendConfigSchema,
+      PiSearchPyseriniRestBackendConfigSchema,
       PiSearchMockBackendConfigSchema,
     ]),
   },
@@ -151,6 +164,25 @@ export function buildHttpJsonExtensionConfig(options: {
         searchUrl: options.searchUrl,
         readDocumentUrl: options.readDocumentUrl,
       },
+    },
+  };
+}
+
+export function buildPyseriniRestExtensionConfig(options: {
+  baseUrl: string;
+  index: string;
+  tokenEnv?: string;
+  searchMaxDocLength?: number;
+  readMode?: "full" | "paginated";
+}): PiSearchExtensionConfig {
+  return {
+    backend: {
+      kind: "pyserini-rest",
+      baseUrl: options.baseUrl,
+      index: options.index,
+      tokenEnv: options.tokenEnv,
+      searchMaxDocLength: options.searchMaxDocLength,
+      readMode: options.readMode,
     },
   };
 }

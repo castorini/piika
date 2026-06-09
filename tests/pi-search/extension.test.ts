@@ -7,9 +7,11 @@ import {
   buildAnseriniBm25TcpExtensionConfig,
   buildHttpJsonExtensionConfig,
   buildMockExtensionConfig,
+  buildPyseriniRestExtensionConfig,
   parsePiSearchExtensionConfig,
   resolvePiSearchExtensionConfigFromEnv,
 } from "../../src/pi-search/config";
+import { registerPiSearchExtension } from "../../src/pi-search/extension";
 import {
   buildReadSpillFileName,
   buildSearchSpillFileName,
@@ -175,6 +177,115 @@ void test("parsePiSearchExtensionConfig accepts an http-json backend config", ()
     assert.equal(parsed.backend.capabilities.backendId, "http-json-test");
     assert.equal(parsed.backend.endpoints.searchUrl, "http://127.0.0.1:8080/search");
   }
+});
+
+void test("buildPyseriniRestExtensionConfig produces a valid pyserini-rest backend config", () => {
+  const parsed = buildPyseriniRestExtensionConfig({
+    baseUrl: "http://127.0.0.1:8081",
+    index: "browsecomp-plus",
+    tokenEnv: "PYSERINI_API_KEY",
+    searchMaxDocLength: 500,
+    readMode: "paginated",
+  });
+
+  assert.equal(parsed.backend.kind, "pyserini-rest");
+  if (parsed.backend.kind === "pyserini-rest") {
+    assert.equal(parsed.backend.baseUrl, "http://127.0.0.1:8081");
+    assert.equal(parsed.backend.index, "browsecomp-plus");
+    assert.equal(parsed.backend.tokenEnv, "PYSERINI_API_KEY");
+    assert.equal(parsed.backend.searchMaxDocLength, 500);
+    assert.equal(parsed.backend.readMode, "paginated");
+  }
+});
+
+void test("parsePiSearchExtensionConfig accepts a pyserini-rest backend config", () => {
+  const parsed = parsePiSearchExtensionConfig(
+    '{"backend":{"kind":"pyserini-rest","baseUrl":"http://127.0.0.1:8081","index":"browsecomp-plus","tokenEnv":"PYSERINI_API_KEY","searchMaxDocLength":500,"readMode":"paginated"}}',
+  );
+
+  assert.equal(parsed.backend.kind, "pyserini-rest");
+  if (parsed.backend.kind === "pyserini-rest") {
+    assert.equal(parsed.backend.baseUrl, "http://127.0.0.1:8081");
+    assert.equal(parsed.backend.index, "browsecomp-plus");
+    assert.equal(parsed.backend.searchMaxDocLength, 500);
+    assert.equal(parsed.backend.readMode, "paginated");
+  }
+});
+
+void test("registerPiSearchExtension exposes a two-tool prompt surface for pyserini-rest-2tool mode", () => {
+  const tools: Array<{
+    name: string;
+    description?: string;
+    promptSnippet?: string;
+    promptGuidelines?: string[];
+  }> = [];
+  const pi = {
+    on: () => {},
+    registerTool: (tool: {
+      name: string;
+      description?: string;
+      promptSnippet?: string;
+      promptGuidelines?: string[];
+    }) => {
+      tools.push(tool);
+    },
+  };
+
+  registerPiSearchExtension(pi as never, {
+    toolInterface: "pyserini-rest-2tool",
+    resolveConfig: () =>
+      buildPyseriniRestExtensionConfig({
+        baseUrl: "http://127.0.0.1:8081",
+        index: "browsecomp-plus",
+      }),
+  });
+
+  assert.deepEqual(
+    tools.map((tool) => tool.name),
+    ["search", "read_document"],
+  );
+  assert.match(
+    (tools[0].promptGuidelines ?? []).join("\n"),
+    /no search_id or result-page browsing tool/,
+  );
+  assert.match(tools[1].promptSnippet ?? "", /fetch the full document by docid/);
+});
+
+void test("registerPiSearchExtension exposes paginated read_document when pyserini-rest readMode is paginated", () => {
+  const tools: Array<{
+    name: string;
+    description?: string;
+    promptSnippet?: string;
+    promptGuidelines?: string[];
+  }> = [];
+  const pi = {
+    on: () => {},
+    registerTool: (tool: {
+      name: string;
+      description?: string;
+      promptSnippet?: string;
+      promptGuidelines?: string[];
+    }) => {
+      tools.push(tool);
+    },
+  };
+
+  registerPiSearchExtension(pi as never, {
+    toolInterface: "pyserini-rest-2tool",
+    resolveConfig: () =>
+      buildPyseriniRestExtensionConfig({
+        baseUrl: "http://127.0.0.1:8081",
+        index: "browsecomp-plus",
+        readMode: "paginated",
+      }),
+  });
+
+  assert.deepEqual(
+    tools.map((tool) => tool.name),
+    ["search", "read_document"],
+  );
+  assert.match(tools[1].promptSnippet ?? "", /paginated line-based chunks/);
+  assert.match((tools[1].promptGuidelines ?? []).join("\n"), /Start with offset=1/);
 });
 
 void test("parsePiSearchExtensionConfig accepts a mock backend config", () => {

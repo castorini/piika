@@ -9,6 +9,8 @@ import {
   SUBMIT_NOW_TRIGGER_RATIO,
 } from "./prompt_policy";
 import {
+  DirectReadDocumentParamsSchema,
+  DirectSearchParamsSchema,
   PlainSearchParamsSchema,
   ReadDocumentParamsSchema,
   ReadSearchResultsParamsSchema,
@@ -21,10 +23,14 @@ import {
 } from "./searcher/runtime";
 import { ManagedTempSpillDir } from "./spill";
 import {
+  executeDirectReadDocumentTool,
+  executeDirectSearchTool,
   executeReadDocumentTool,
   executeReadSearchResultsTool,
   executeSearchTool,
 } from "./tool_handlers";
+
+export type PiSearchToolInterface = "pi-serini-3tool" | "pyserini-rest-2tool";
 
 export type PiSearchExtensionOptions = {
   resolveConfig?: (env: NodeJS.ProcessEnv) => PiSearchExtensionConfig;
@@ -32,7 +38,18 @@ export type PiSearchExtensionOptions = {
   createBackend?: PiSearchBackendFactory;
   buildCacheKey?: PiSearchBackendRuntimeOptions["buildCacheKey"];
   spillDirPrefix?: string;
+  toolInterface?: PiSearchToolInterface;
 };
+
+function resolveToolInterface(options: PiSearchExtensionOptions): PiSearchToolInterface {
+  const raw = options.toolInterface ?? process.env.PI_SEARCH_TOOL_INTERFACE ?? "pi-serini-3tool";
+  if (raw === "pi-serini-3tool" || raw === "pyserini-rest-2tool") {
+    return raw;
+  }
+  throw new Error(
+    `Invalid PI_SEARCH_TOOL_INTERFACE=${raw}. Expected pi-serini-3tool or pyserini-rest-2tool.`,
+  );
+}
 
 export function registerPiSearchExtension(
   pi: ExtensionAPI,
@@ -48,6 +65,7 @@ export function registerPiSearchExtension(
       createBackend: options.createBackend,
     });
   const spillDir = new ManagedTempSpillDir(options.spillDirPrefix ?? "pi-search-extension-");
+  const toolInterface = resolveToolInterface(options);
   const submitNowDelayMs = getSubmitNowDelayMs();
   let spillSequence = 0;
   let submitNowTimer: ReturnType<typeof setTimeout> | null = null;
@@ -79,6 +97,10 @@ export function registerPiSearchExtension(
     spillDir,
     nextSpillSequence,
   };
+  const pyseriniRestPaginatedRead =
+    toolInterface === "pyserini-rest-2tool" &&
+    extensionConfig.backend.kind === "pyserini-rest" &&
+    extensionConfig.backend.readMode === "paginated";
 
   registerSpillCleanup();
 
@@ -161,57 +183,91 @@ export function registerPiSearchExtension(
     name: "search",
     label: "Search",
     description:
-      "Search the configured pi-search backend using a raw query string. The first argument must be reason, a brief rationale of at most 100 words.",
+      toolInterface === "pyserini-rest-2tool"
+        ? "Search the configured Pyserini REST backend and return ranked hits directly. The first argument must be reason, a brief rationale of at most 100 words."
+        : "Search the configured pi-search backend using a raw query string. The first argument must be reason, a brief rationale of at most 100 words.",
     promptSnippet:
-      "Always supply reason first, under 100 words. Use query for a concise raw search string based on the original wording or one grounded refinement. The tool returns a search_id plus the first page of results.",
-    promptGuidelines: [
-      "Always provide reason first. Keep it specific and under 100 words.",
-      "Use query as a short raw lexical query string, not a structured object and not raw Lucene syntax.",
-      "Start close to the original wording, then make grounded refinements only after browsing or reading.",
-      "If the current ranking looks partially relevant, browse it before rewriting.",
-      "After browsing a ranking that surfaces plausible candidates, inspect one with read_document(docid).",
-    ],
-    parameters: PlainSearchParamsSchema,
+      toolInterface === "pyserini-rest-2tool"
+        ? "Always supply reason first, under 100 words. Use query for a concise lexical query. The tool returns ranked Pyserini REST hits directly; inspect promising docids with read_document."
+        : "Always supply reason first, under 100 words. Use query for a concise raw search string based on the original wording or one grounded refinement. The tool returns a search_id plus the first page of results.",
+    promptGuidelines:
+      toolInterface === "pyserini-rest-2tool"
+        ? [
+            "Always provide reason first. Keep it specific and under 100 words.",
+            "Use query as a short raw lexical query string, not a structured object and not raw Lucene syntax.",
+            "The search result itself is the visible ranked list; there is no search_id or result-page browsing tool in this condition.",
+            "Keep hits small by default. Increase hits only when the visible ranking is too shallow for the question.",
+            "Open promising docids with read_document before answering.",
+          ]
+        : [
+            "Always provide reason first. Keep it specific and under 100 words.",
+            "Use query as a short raw lexical query string, not a structured object and not raw Lucene syntax.",
+            "Start close to the original wording, then make grounded refinements only after browsing or reading.",
+            "If the current ranking looks partially relevant, browse it before rewriting.",
+            "After browsing a ranking that surfaces plausible candidates, inspect one with read_document(docid).",
+          ],
+    parameters:
+      toolInterface === "pyserini-rest-2tool" ? DirectSearchParamsSchema : PlainSearchParamsSchema,
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
-      return executeSearchTool(params, signal, ctx, toolDeps);
+      return toolInterface === "pyserini-rest-2tool"
+        ? executeDirectSearchTool(params, signal, ctx, toolDeps)
+        : executeSearchTool(params, signal, ctx, toolDeps);
     },
   });
 
-  pi.registerTool({
-    name: "read_search_results",
-    label: "Read Search Results",
-    description:
-      "Read a cached search result set by search_id. Supports offset and limit for paginated browsing of ranked hits, similar to the built-in read tool. The first argument must be reason, a brief rationale of at most 100 words.",
-    promptSnippet:
-      "Always supply reason first, with a brief rationale of at most 100 words. Then read a cached search result set by search_id in paginated ranked-hit chunks using offset and limit.",
-    promptGuidelines: [
-      "Always provide reason as the first argument. Keep it specific and under 100 words.",
-      "Use read_search_results to browse deeper ranks from an existing search result set before rewriting the query.",
-      "If the current ranking looks partly relevant, inspect more ranks here rather than issuing another search immediately.",
-      "When browse surfaces plausible candidate biographies, open one with read_document(docid).",
-    ],
-    parameters: ReadSearchResultsParamsSchema,
-    async execute(_toolCallId, params, signal, _onUpdate, ctx) {
-      return executeReadSearchResultsTool(params, signal, ctx, toolDeps);
-    },
-  });
+  if (toolInterface === "pi-serini-3tool") {
+    pi.registerTool({
+      name: "read_search_results",
+      label: "Read Search Results",
+      description:
+        "Read a cached search result set by search_id. Supports offset and limit for paginated browsing of ranked hits, similar to the built-in read tool. The first argument must be reason, a brief rationale of at most 100 words.",
+      promptSnippet:
+        "Always supply reason first, with a brief rationale of at most 100 words. Then read a cached search result set by search_id in paginated ranked-hit chunks using offset and limit.",
+      promptGuidelines: [
+        "Always provide reason as the first argument. Keep it specific and under 100 words.",
+        "Use read_search_results to browse deeper ranks from an existing search result set before rewriting the query.",
+        "If the current ranking looks partly relevant, inspect more ranks here rather than issuing another search immediately.",
+        "When browse surfaces plausible candidate biographies, open one with read_document(docid).",
+      ],
+      parameters: ReadSearchResultsParamsSchema,
+      async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+        return executeReadSearchResultsTool(params, signal, ctx, toolDeps);
+      },
+    });
+  }
 
   pi.registerTool({
     name: "read_document",
     label: "Read Document",
     description:
-      "Read a retrieved document by docid. Supports offset and limit for paginated line-based reading, similar to the built-in read tool. The first argument must be reason, a brief rationale of at most 100 words.",
+      toolInterface === "pyserini-rest-2tool" && !pyseriniRestPaginatedRead
+        ? "Fetch a full document by docid from the configured Pyserini REST backend. The first argument must be reason, a brief rationale of at most 100 words."
+        : "Read a retrieved document by docid. Supports offset and limit for paginated line-based reading, similar to the built-in read tool. The first argument must be reason, a brief rationale of at most 100 words.",
     promptSnippet:
-      "Always supply reason first, with a brief rationale of at most 100 words. Then read a retrieved document by docid in paginated line-based chunks using offset and limit.",
-    promptGuidelines: [
-      "Always provide reason as the first argument. Keep it specific and under 100 words.",
-      "Use read_document to verify evidence from a specific docid before answering.",
-      "Start with offset=1 and a moderate limit when first reading a document.",
-      "If a document is truncated and still looks relevant, continue reading the same document with the suggested next offset before launching many new searches.",
-    ],
-    parameters: ReadDocumentParamsSchema,
+      toolInterface === "pyserini-rest-2tool" && !pyseriniRestPaginatedRead
+        ? "Always supply reason first, with a brief rationale of at most 100 words. Then fetch the full document by docid; no offset or limit is needed."
+        : "Always supply reason first, with a brief rationale of at most 100 words. Then read a retrieved document by docid in paginated line-based chunks using offset and limit.",
+    promptGuidelines:
+      toolInterface === "pyserini-rest-2tool" && !pyseriniRestPaginatedRead
+        ? [
+            "Always provide reason as the first argument. Keep it specific and under 100 words.",
+            "Use read_document to verify evidence from a specific docid before answering.",
+            "Do not provide offset or limit; this tool fetches the full document returned by Pyserini REST.",
+          ]
+        : [
+            "Always provide reason as the first argument. Keep it specific and under 100 words.",
+            "Use read_document to verify evidence from a specific docid before answering.",
+            "Start with offset=1 and a moderate limit when first reading a document.",
+            "If a document is truncated and still looks relevant, continue reading the same document with the suggested next offset before launching many new searches.",
+          ],
+    parameters:
+      toolInterface === "pyserini-rest-2tool" && !pyseriniRestPaginatedRead
+        ? DirectReadDocumentParamsSchema
+        : ReadDocumentParamsSchema,
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
-      return executeReadDocumentTool(params, signal, ctx, toolDeps);
+      return toolInterface === "pyserini-rest-2tool" && !pyseriniRestPaginatedRead
+        ? executeDirectReadDocumentTool(params, signal, ctx, toolDeps)
+        : executeReadDocumentTool(params, signal, ctx, toolDeps);
     },
   });
 }
