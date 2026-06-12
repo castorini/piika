@@ -1,6 +1,6 @@
 <div align="center">
 
-# pi-serini
+# piika <img src="docs/assets/piika-logo.png" alt="piika logo" width="300">
 
 A reusable, reproducible `pi` search-agent workspace
 
@@ -11,9 +11,15 @@ There are many search agents, but this one is
 
 _yours_.
 
+<p>
+<strong>piika is the successor to <code>pi-serini</code></strong>, the original benchmark-driven search-agent workspace started by Jheng-Hong (Matt) Yang. This project carries that path forward under the new repository name.
+</p>
+
 </div>
 
-`pi-serini` is a reusable, benchmark-driven `pi` search-agent workspace for index-driven BM25 retrieval, agentic search, and benchmark-aware evaluation.
+`piika` is a reusable, benchmark-driven `pi` search-agent workspace for index-driven BM25 retrieval, agentic search, and benchmark-aware evaluation.
+
+Current update: this repository has been rebranded to `piika` from the original `pi-serini`. Historical release notes, published datasets, and compatibility identifiers may still use the `pi-serini` name.
 
 Current release status: `v0.3.0` supports index-driven benchmark and agentic search workflows for MS MARCO v1 Passage (`dl19`, `dl20`) and BrowseComp-Plus, with `benchmark-template` included as a tiny local end-to-end demo benchmark. This release tracks the Pi package namespace migration to `@earendil-works/*` and requires `pi` 0.74.0 or newer.
 
@@ -301,14 +307,14 @@ Legacy shell scripts under `scripts/` still work, but they are compatibility shi
 - [Adding a benchmark](docs/adding-a-benchmark.md)
 - [BM25 backend interface](docs/bm25-extension-interface.md)
 - Released Run on BrowseComp-Plus (Canary to prevent leakage: `piserini-a-minimal-search-agent`)
-  - [PiSerini w/ DeepSeek V4 Flash](https://huggingface.co/datasets/ricky42613/piserini_bcp_deepseekv4_flash)
-  - [PiSerini w/ DeepSeek V4 Pro](https://huggingface.co/datasets/ricky42613/piserini_bcp_deepseekv4_pro)
-  - [PiSerini w/ GPT-5](https://huggingface.co/datasets/ricky42613/piserini_bcp_gpt5)
-  - [PiSerini w/ GPT-5.2](https://huggingface.co/datasets/ricky42613/piserini_bcp_gpt52)
-  - [PiSerini w/ GPT-5.4](https://huggingface.co/datasets/ricky42613/piserini_bcp_gpt54)
-  - [PiSerini w/ GPT-5.5](https://huggingface.co/datasets/ricky42613/piserini_bcp_gpt55)
-  - [PiSerini w/ Claude Opus 4.7](https://huggingface.co/datasets/ricky42613/piserini_bcp_opus47)
-  - [PiSerini w/ Claude 3.5 Haiku](https://huggingface.co/datasets/ricky42613/piserini_bcp_haiku)
+  - [piika w/ DeepSeek V4 Flash](https://huggingface.co/datasets/ricky42613/piserini_bcp_deepseekv4_flash)
+  - [piika w/ DeepSeek V4 Pro](https://huggingface.co/datasets/ricky42613/piserini_bcp_deepseekv4_pro)
+  - [piika w/ GPT-5](https://huggingface.co/datasets/ricky42613/piserini_bcp_gpt5)
+  - [piika w/ GPT-5.2](https://huggingface.co/datasets/ricky42613/piserini_bcp_gpt52)
+  - [piika w/ GPT-5.4](https://huggingface.co/datasets/ricky42613/piserini_bcp_gpt54)
+  - [piika w/ GPT-5.5](https://huggingface.co/datasets/ricky42613/piserini_bcp_gpt55)
+  - [piika w/ Claude Opus 4.7](https://huggingface.co/datasets/ricky42613/piserini_bcp_opus47)
+  - [piika w/ Claude 3.5 Haiku](https://huggingface.co/datasets/ricky42613/piserini_bcp_haiku)
 
 ## Citation
 
@@ -329,10 +335,6 @@ Legacy shell scripts under `scripts/` still work, but they are compatibility shi
 - Runs snapshot their resolved benchmark condition into `<run>/benchmark_manifest_snapshot.json`.
 - Reports now prefer structured run setup metadata from `<run>/run_setup.json` and fall back to legacy launcher logs when needed.
 - Do not track generated benchmark content under `data/`, `indexes/`, `runs/`, `evals/`, or `scratch/`.
-
-## Contact
-
-Jheng-Hong (Matt) YANG: jhyang@stencilzeit.com
 
 ## License
 

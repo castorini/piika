@@ -1,6 +1,6 @@
 # Release Checklist
 
-This checklist is for cutting a `pi-serini` release tag and publishing the matching GitHub release notes.
+This checklist is for cutting a `piika` release tag and publishing the matching GitHub release notes.
 
 ## 1. Finalize release scope
 

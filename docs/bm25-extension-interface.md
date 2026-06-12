@@ -1,6 +1,6 @@
 # BM25 integration architecture for `pi-search`
 
-This document explains the **BM25-specific integration seam** inside `pi-serini`.
+This document explains the **BM25-specific integration seam** inside `piika`.
 
 It is for maintainers or backend integrators who want to understand one narrow question:
 
@@ -319,4 +319,4 @@ If BM25 integration changes again, keep these rules true:
 4. BM25-specific request/response handling should stay behind the Anserini adapter boundary.
 5. Package-owned `pi-search` logic should continue to depend on the normalized `PiSearchBackend` contract, not BM25 helper details.
 
-If those rules remain true, `pi-search` stays extractable while `pi-serini` still supports the in-repo Anserini BM25 path cleanly.
+If those rules remain true, `pi-search` stays extractable while `piika` still supports the in-repo Anserini BM25 path cleanly.

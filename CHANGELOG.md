@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Updated the repository branding from `pi-serini` to `piika`, including the new logo and successor note while preserving historical release notes under their original name.
+
 ## [0.3.0] - 2026-05-12
 
 ### Added
