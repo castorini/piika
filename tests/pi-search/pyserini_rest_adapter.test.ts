@@ -197,7 +197,9 @@ void test("pyserini-rest adapter handles absolute index paths and bearer tokens"
   const server = createServer((request, response) => {
     assert.equal(request.headers.authorization, "Bearer secret-token");
     assert.equal(request.method, "GET");
-    assert.equal(request.url?.startsWith("/v1//data/indexes/demo/search?"), true);
+    const url = new URL(request.url ?? "", "http://127.0.0.1");
+    assert.equal(url.pathname, "/v1//data/indexes/demo/search");
+    assert.equal(url.searchParams.get("max_doc_length"), "500");
     response.setHeader("content-type", "application/json");
     response.end(JSON.stringify({ candidates: [] }));
   });

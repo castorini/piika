@@ -3,6 +3,7 @@ import {
   getDefaultBenchmarkId,
   resolveBenchmarkConfig,
 } from "../benchmarks/registry";
+import { buildPyseriniRestExtensionConfig } from "../pi-search/config";
 import { buildTsxCommand } from "../runtime/tsx";
 
 export type BenchmarkQuerySetLaunchArgs = {
@@ -48,6 +49,58 @@ export function parseInteger(value: string, label: string): number {
   return parsed;
 }
 
+function readEnvFrom(env: NodeJS.ProcessEnv, name: string): string | undefined {
+  const value = env[name]?.trim();
+  return value ? value : undefined;
+}
+
+function parseOptionalIntegerEnv(env: NodeJS.ProcessEnv, name: string): number | undefined {
+  const value = readEnvFrom(env, name);
+  return value ? parseInteger(value, name) : undefined;
+}
+
+function parsePyseriniRestReadMode(value: string | undefined): "full" | "paginated" | undefined {
+  if (!value) return undefined;
+  if (value === "full" || value === "paginated") return value;
+  throw new Error(`PYSERINI_REST_READ_MODE must be "full" or "paginated"; received ${value}`);
+}
+
+function buildPyseriniRestEnvShortcut(baseEnv: NodeJS.ProcessEnv): Record<string, string> {
+  if (readEnvFrom(baseEnv, "PI_SEARCH_EXTENSION_CONFIG")) {
+    return {};
+  }
+  const baseUrl = readEnvFrom(baseEnv, "PYSERINI_REST_BASE_URL");
+  const index = readEnvFrom(baseEnv, "PYSERINI_REST_INDEX");
+  if (!baseUrl && !index) {
+    return {};
+  }
+  if (!baseUrl || !index) {
+    throw new Error(
+      "PYSERINI_REST_BASE_URL and PYSERINI_REST_INDEX must both be set to use the Pyserini REST backend shortcut.",
+    );
+  }
+
+  const tokenEnv =
+    readEnvFrom(baseEnv, "PYSERINI_REST_TOKEN_ENV") ??
+    (readEnvFrom(baseEnv, "PYSERINI_API_TOKEN") ? "PYSERINI_API_TOKEN" : undefined);
+  const readMode = parsePyseriniRestReadMode(
+    readEnvFrom(baseEnv, "PYSERINI_REST_READ_MODE") ?? "paginated",
+  );
+  const config = buildPyseriniRestExtensionConfig({
+    baseUrl,
+    index,
+    tokenEnv,
+    searchMaxDocLength: parseOptionalIntegerEnv(baseEnv, "PYSERINI_REST_SEARCH_MAX_DOC_LENGTH"),
+    readMode,
+  });
+
+  return {
+    PI_SEARCH_EXTENSION_CONFIG: JSON.stringify(config),
+    PI_SEARCH_TOOL_INTERFACE:
+      readEnvFrom(baseEnv, "PI_SEARCH_TOOL_INTERFACE") ?? "pyserini-rest-2tool",
+  };
+}
+
 export function resolveBenchmarkQuerySetLaunchPlan(
   args: BenchmarkQuerySetLaunchArgs,
 ): BenchmarkQuerySetLaunchPlan {
@@ -90,8 +143,10 @@ export function buildBenchmarkQuerySetLaunchEnv(
   plan: BenchmarkQuerySetLaunchPlan,
   baseEnv: NodeJS.ProcessEnv = process.env,
 ): NodeJS.ProcessEnv {
+  const pyseriniRestEnv = buildPyseriniRestEnvShortcut(baseEnv);
   return {
     ...baseEnv,
+    ...pyseriniRestEnv,
     BENCHMARK: plan.benchmarkId,
     QUERY_SET: plan.querySetId,
     QUERY_FILE: plan.queryPath,

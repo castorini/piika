@@ -79,7 +79,8 @@ The adapter calls:
 GET /v1/{index}/search?query=<query>&hits=<k>&max_doc_length=<n>
 ```
 
-`searchMaxDocLength` controls `<n>`. If omitted, the adapter uses `500`.
+`searchMaxDocLength` controls `<n>`. If omitted, the adapter uses `500`, which
+matches the local Pyserini-backed search provider's default preview length.
 
 The provider expects the REST response to include a `candidates` array. Each
 candidate may include:
@@ -173,6 +174,30 @@ npx tsx src/orchestration/query_set.ts \
 ```
 
 For native full-read behavior, omit `readMode` or set `"readMode":"full"`.
+
+## Benchmark launcher shortcut
+
+For benchmark runs, the launcher can build `PI_SEARCH_EXTENSION_CONFIG` from
+environment variables instead of requiring inline JSON:
+
+```bash
+PYSERINI_REST_BASE_URL=https://pyserini-rest.example.test \
+PYSERINI_REST_INDEX=custom-index \
+PI_SERINI_DRY_RUN=1 \
+npm run run:benchmark:query-set -- --benchmark benchmark-template --query-set demo
+```
+
+Authenticated endpoints can read the bearer token from `PYSERINI_API_TOKEN`.
+Set `PYSERINI_REST_TOKEN_ENV` to the name of another environment variable when
+the token lives somewhere else.
+
+When `PYSERINI_REST_BASE_URL` and `PYSERINI_REST_INDEX` are set, the launcher
+builds `PI_SEARCH_EXTENSION_CONFIG` for the `pyserini-rest` backend, selects
+`PI_SEARCH_TOOL_INTERFACE=pyserini-rest-2tool`, uses
+`readMode:"paginated"` for local `offset`/`limit` slicing, and sends
+`max_doc_length` on search requests. The default `max_doc_length` is `500`;
+override it with `PYSERINI_REST_SEARCH_MAX_DOC_LENGTH` only when an experiment
+needs a different preview length.
 
 ## Troubleshooting
 
