@@ -61,6 +61,7 @@ void test("mergeShardOutputs synthesizes merged metadata instead of failing on s
   mergeShardOutputs(
     {
       benchmarkId: "benchmark-template",
+      backendKind: "shared-bm25",
       querySetId: "dev",
       model: "openai-codex/gpt-5.4-mini",
       piSearchPromptVariant: "plain_minimal",

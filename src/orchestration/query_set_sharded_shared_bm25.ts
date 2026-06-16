@@ -56,6 +56,7 @@ type Args = {
 };
 
 type ShardedLaunchPlan = BenchmarkQuerySetLaunchPlan & {
+  backendKind: "shared-bm25" | "pyserini-rest";
   shardCount: number;
   host: string;
   port: number;
@@ -99,6 +100,8 @@ type PersistedRunSetup = {
   bm25Threads?: string;
   maxShardAttempts?: string;
   shardRetryMode?: string;
+  toolInterface?: string;
+  searchBackendKind?: string;
 };
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -108,6 +111,22 @@ function parseBooleanFlag(value: string | undefined, defaultValue: boolean): boo
   if (value === "1") return true;
   if (value === "0") return false;
   throw new Error(`Expected 0 or 1, received ${value}`);
+}
+
+function usesPyseriniRestBackendShortcut(): boolean {
+  const extensionConfig = readEnv("PI_SEARCH_EXTENSION_CONFIG");
+  if (extensionConfig) {
+    try {
+      const parsed = JSON.parse(extensionConfig) as { backend?: { kind?: unknown } };
+      if (parsed.backend?.kind === "pyserini-rest") {
+        return true;
+      }
+    } catch {
+      return false;
+    }
+  }
+
+  return Boolean(readEnv("PYSERINI_REST_BASE_URL") && readEnv("PYSERINI_REST_INDEX"));
 }
 
 function formatRunStamp(date: Date): string {
@@ -361,9 +380,11 @@ function resolveShardedLaunchPlan(args: Args): ShardedLaunchPlan {
     readEnv("OUTPUT_DIR") ??
     `runs/pi_bm25_${benchmarkPlan.benchmarkId}_${benchmarkPlan.querySetId}_${benchmarkPlan.piSearchPromptVariant}_${modelTag}_shared${shardCount}_${runStamp}`;
   const logDir = readEnv("LOG_DIR") ?? `${outputRoot}/logs`;
+  const backendKind = usesPyseriniRestBackendShortcut() ? "pyserini-rest" : "shared-bm25";
 
   return {
     ...benchmarkPlan,
+    backendKind,
     shardCount,
     host,
     port,
@@ -406,7 +427,10 @@ function printShardedLaunchPlan(plan: ShardedLaunchPlan): void {
   console.log(`LOG_DIR=${plan.logDir}`);
   console.log(`INDEX_PATH=${plan.indexPath}`);
   console.log(`SHARD_COUNT=${plan.shardCount}`);
-  console.log(`BM25_THREADS=${process.env.PI_BM25_THREADS?.trim() || "1"}`);
+  console.log(`SEARCH_BACKEND_KIND=${plan.backendKind}`);
+  if (plan.backendKind === "shared-bm25") {
+    console.log(`BM25_THREADS=${process.env.PI_BM25_THREADS?.trim() || "1"}`);
+  }
 }
 
 function ensureFileExists(path: string, label: string): void {
@@ -515,6 +539,7 @@ function buildPersistedRunSetup(args: {
   totalQueries: number;
   timeoutSeconds: number;
   indexPath: string;
+  backendKind: "shared-bm25" | "pyserini-rest";
 }): PersistedRunSetup {
   return {
     slice: args.querySetId,
@@ -530,6 +555,11 @@ function buildPersistedRunSetup(args: {
     bm25Threads: resolveEnvValue("PI_BM25_THREADS", "1"),
     maxShardAttempts: resolveEnvValue("MAX_SHARD_ATTEMPTS"),
     shardRetryMode: resolveEnvValue("SHARD_RETRY_MODE"),
+    toolInterface:
+      args.backendKind === "pyserini-rest"
+        ? (resolveEnvValue("PI_SEARCH_TOOL_INTERFACE") ?? "pyserini-rest-2tool")
+        : "pi-serini-3tool",
+    searchBackendKind: args.backendKind,
   };
 }
 
@@ -561,6 +591,7 @@ function writeMergedRunMetadata(plan: ShardedLaunchPlan, totalQueries: number): 
         totalQueries,
         timeoutSeconds: plan.timeoutSeconds,
         indexPath: plan.indexPath,
+        backendKind: plan.backendKind,
       }),
       null,
       2,
@@ -657,8 +688,12 @@ function spawnShard(plan: ShardedLaunchPlan, shard: ShardFile, attempt: number):
       cwd: REPO_ROOT,
       env: {
         ...process.env,
-        PI_BM25_RPC_HOST: plan.host,
-        PI_BM25_RPC_PORT: String(plan.port),
+        ...(plan.backendKind === "shared-bm25"
+          ? {
+              PI_BM25_RPC_HOST: plan.host,
+              PI_BM25_RPC_PORT: String(plan.port),
+            }
+          : {}),
         BENCHMARK: plan.benchmarkId,
         QUERY_SET: plan.querySetId,
         BENCH_MANAGED_RUN_ID: process.env.BENCH_MANAGED_RUN_ID ?? "",
@@ -829,7 +864,7 @@ async function main(): Promise<void> {
   mkdirSync(resolve(REPO_ROOT, plan.logDir), { recursive: true });
   mkdirSync(resolve(REPO_ROOT, plan.controlDir), { recursive: true });
 
-  if (await isTcpPortListening(plan.host, plan.port)) {
+  if (plan.backendKind === "shared-bm25" && (await isTcpPortListening(plan.host, plan.port))) {
     throw new Error(
       `Port ${plan.port} is already in use. Set PI_BM25_RPC_PORT to a free port or stop the existing listener.`,
     );
@@ -853,9 +888,19 @@ async function main(): Promise<void> {
   logLine(runLogPath, `TOTAL_QUERIES=${queries.length}`);
   logLine(runLogPath, `TIMEOUT_SECONDS=${plan.timeoutSeconds}`);
   logLine(runLogPath, `INDEX_PATH=${plan.indexPath}`);
-  logLine(runLogPath, `BM25_K1=${process.env.PI_BM25_K1?.trim() || "0.9"}`);
-  logLine(runLogPath, `BM25_B=${process.env.PI_BM25_B?.trim() || "0.4"}`);
-  logLine(runLogPath, `BM25_THREADS=${process.env.PI_BM25_THREADS?.trim() || "1"}`);
+  logLine(runLogPath, `SEARCH_BACKEND_KIND=${plan.backendKind}`);
+  if (plan.backendKind === "shared-bm25") {
+    logLine(runLogPath, `BM25_K1=${process.env.PI_BM25_K1?.trim() || "0.9"}`);
+    logLine(runLogPath, `BM25_B=${process.env.PI_BM25_B?.trim() || "0.4"}`);
+    logLine(runLogPath, `BM25_THREADS=${process.env.PI_BM25_THREADS?.trim() || "1"}`);
+  } else {
+    logLine(runLogPath, `PYSERINI_REST_BASE_URL=${readEnv("PYSERINI_REST_BASE_URL") ?? ""}`);
+    logLine(runLogPath, `PYSERINI_REST_INDEX=${readEnv("PYSERINI_REST_INDEX") ?? ""}`);
+    logLine(
+      runLogPath,
+      `PI_SEARCH_TOOL_INTERFACE=${readEnv("PI_SEARCH_TOOL_INTERFACE") ?? "pyserini-rest-2tool"}`,
+    );
+  }
   logLine(runLogPath, `MAX_SHARD_ATTEMPTS=${plan.maxShardAttempts}`);
   logLine(runLogPath, `SHARD_RETRY_MODE=${plan.shardRetryMode}`);
 
@@ -867,11 +912,18 @@ async function main(): Promise<void> {
     "utf8",
   );
 
-  console.log(`Starting shared BM25 RPC daemon on ${plan.host}:${plan.port}`);
-  console.log(`INDEX_PATH=${plan.resolvedIndexPath}`);
-  console.log(`BM25_K1=${process.env.PI_BM25_K1?.trim() || "0.9"}`);
-  console.log(`BM25_B=${process.env.PI_BM25_B?.trim() || "0.4"}`);
-  console.log(`BM25_THREADS=${process.env.PI_BM25_THREADS?.trim() || "1"}`);
+  if (plan.backendKind === "shared-bm25") {
+    console.log(`Starting shared BM25 RPC daemon on ${plan.host}:${plan.port}`);
+    console.log(`INDEX_PATH=${plan.resolvedIndexPath}`);
+    console.log(`BM25_K1=${process.env.PI_BM25_K1?.trim() || "0.9"}`);
+    console.log(`BM25_B=${process.env.PI_BM25_B?.trim() || "0.4"}`);
+    console.log(`BM25_THREADS=${process.env.PI_BM25_THREADS?.trim() || "1"}`);
+  } else {
+    console.log(
+      `Using Pyserini REST backend ${readEnv("PYSERINI_REST_BASE_URL") ?? "<configured>"}`,
+    );
+    console.log(`PYSERINI_REST_INDEX=${readEnv("PYSERINI_REST_INDEX") ?? "<configured>"}`);
+  }
 
   let server: Awaited<ReturnType<typeof startBm25Server>> | undefined;
   const cleanup = () => {
@@ -884,8 +936,12 @@ async function main(): Promise<void> {
 
   let status = 0;
   try {
-    server = await startBm25Server(plan);
-    logLine(runLogPath, `Shared BM25 RPC daemon ready. Log: ${plan.bm25LogPath}`);
+    if (plan.backendKind === "shared-bm25") {
+      server = await startBm25Server(plan);
+      logLine(runLogPath, `Shared BM25 RPC daemon ready. Log: ${plan.bm25LogPath}`);
+    } else {
+      logLine(runLogPath, "Using external Pyserini REST backend; BM25 daemon not started.");
+    }
 
     const attempts = new Map<string, number>(shardFiles.map((file) => [file.shardName, 1]));
     let pending = [...shardFiles];

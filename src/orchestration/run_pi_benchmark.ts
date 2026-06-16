@@ -728,6 +728,18 @@ function appendStderrTail(current: string, chunk: string): string {
   return next.slice(-STDERR_TAIL_MAX_CHARS);
 }
 
+function isProviderUsageLimitText(text: string): boolean {
+  return (
+    text.includes("usage_limit_reached") ||
+    text.includes("ChatGPT usage limit") ||
+    text.includes("You have hit your ChatGPT usage limit")
+  );
+}
+
+function isProviderUsageLimitEvent(event: PiEvent): boolean {
+  return isProviderUsageLimitText(JSON.stringify(event));
+}
+
 async function runPiOnce(
   options: RunPiOptions & {
     rawEventsPath: string;
@@ -782,6 +794,7 @@ async function runPiOnce(
       settled = true;
       timeout.clear();
       clearInterval(heartbeat);
+      child.kill("SIGTERM");
       cleanupStreams();
       const elapsedSeconds = (Date.now() - startedAt) / 1000;
       const normalizedResults = normalizedResultSpool.load();
@@ -837,6 +850,14 @@ async function runPiOnce(
         return;
       }
       rawEventsStream.write(`${trimmed}\n`);
+      if (isProviderUsageLimitEvent(event)) {
+        fail(
+          new Error(
+            "usage_limit_reached: provider usage limit reached; aborting query-set run to avoid recording remaining queries as failed.",
+          ),
+        );
+        return;
+      }
       applyEventToAccumulator(state, event, normalizedResultSpool);
       lastProgressAt = Date.now();
       logEventProgress(options.queryId, event, (lastProgressAt - startedAt) / 1000);
@@ -1220,6 +1241,9 @@ async function main() {
         );
       } catch (error) {
         const message = error instanceof Error ? (error.stack ?? error.message) : String(error);
+        if (isProviderUsageLimitText(message)) {
+          throw error;
+        }
         console.error(
           `[${index + 1}/${queries.length}] Query ${queryId} failed without a finalized run artifact; recording failed query.\n${message}`,
         );

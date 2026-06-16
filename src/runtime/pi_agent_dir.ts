@@ -2,7 +2,12 @@ import { copyFileSync, existsSync, mkdirSync, mkdtempSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 
-const ISOLATED_AGENT_FILENAMES = ["auth.json", "oauth.json", "models.json"] as const;
+const ISOLATED_AGENT_FILENAMES = [
+  "auth.json",
+  "oauth.json",
+  "models.json",
+  "settings.json",
+] as const;
 
 export function resolveDefaultAgentDir(env: NodeJS.ProcessEnv = process.env): string {
   const envAgentDir = env.PI_CODING_AGENT_DIR;

@@ -4,6 +4,7 @@ node_modules/
 .env
 .env.*
 !.env.example
+.curlrc.pyserini-rest
 evals/*
 !evals/.gitkeep
 jvm/build/
@@ -22,3 +23,4 @@ scratch/*
 scripts/__pycache__/
 **/.pi-agent-isolated/
 **/_control/
+tmp/
