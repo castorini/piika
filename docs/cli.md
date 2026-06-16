@@ -9,7 +9,7 @@ The CLI is a thin wrapper around the existing TypeScript operator entrypoints. I
 From a published npm package:
 
 ```bash
-npm install -g piika
+npm install -g @castorini/piika
 piika --help
 piika --version
 ```
@@ -18,7 +18,7 @@ From a local package tarball:
 
 ```bash
 npm pack
-npm install -g ./piika-<version>.tgz
+npm install -g ./castorini-piika-<version>.tgz
 piika --help
 ```
 

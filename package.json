@@ -1,5 +1,5 @@
 {
-  "name": "piika",
+  "name": "@castorini/piika",
   "version": "0.3.0",
   "description": "A reusable, reproducible pi search-agent workspace",
   "keywords": [
@@ -31,7 +31,8 @@
   ],
   "type": "module",
   "publishConfig": {
-    "registry": "https://registry.npmjs.org/"
+    "registry": "https://registry.npmjs.org/",
+    "access": "public"
   },
   "scripts": {
     "setup:benchmark": "npx tsx src/orchestration/setup_benchmark_entry.ts",

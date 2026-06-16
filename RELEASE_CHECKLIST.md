@@ -44,8 +44,8 @@ For a local install smoke test:
 
 ```bash
 npm pack --pack-destination /tmp
-npm uninstall -g piika
-npm install -g /tmp/piika-<version>.tgz
+npm uninstall -g @castorini/piika
+npm install -g /tmp/castorini-piika-<version>.tgz
 piika --help
 piika benchmarks
 piika setup benchmark-template --dry-run
@@ -100,6 +100,7 @@ npx tsx src/wrappers/report_run_markdown_entry.ts --help
 
 Before publishing a GitHub release that should publish to npm, confirm npmjs.com has a Trusted Publisher configured for the package:
 
+- Package: `@castorini/piika`
 - Provider: GitHub Actions
 - Organization/user: `castorini`
 - Repository: `piika`
