@@ -137,6 +137,17 @@ MODEL=openai-codex/gpt-5.4-mini \
 npm run run:benchmark:query-set
 ```
 
+To inject supplied evidence directly into each query prompt, pass a JSONL bundle with one row per query:
+
+```bash
+BENCHMARK=benchmark-template \
+QUERY_SET=test \
+MODEL=openai-codex/gpt-5.4-mini \
+npm run run:benchmark:query-set -- --supplied-doc-bundle data/my-run/supplied-docs.jsonl
+```
+
+Rows use `{ "qid", "question", "groups": [{ "docs": [{ "doc_id", "cited_snippet", "full_text" }] }] }`. Supplied document ids are recorded in run metadata and counted in surfaced, previewed, and agent-visible retrieval views. See [docs/running-benchmarks.md](docs/running-benchmarks.md#supplied-document-bundles) for details.
+
 ### BM25 tuning during benchmark runs
 
 Benchmark runs accept BM25 tuning through environment variables:

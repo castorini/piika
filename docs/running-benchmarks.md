@@ -141,6 +141,60 @@ MODEL=openai-codex/gpt-5.4-mini \
 npm run run:benchmark:query-set
 ```
 
+### Supplied document bundles
+
+Use a supplied document bundle when a run should inject known evidence directly into the agent prompt before it uses search tools. The runner still loads the normal benchmark query and qrels paths for identity and retrieval evaluation, but the question text and supplied documents come from the bundle rows.
+
+Pass the bundle either as a flag:
+
+```bash
+BENCHMARK=benchmark-template \
+QUERY_SET=test \
+MODEL=openai-codex/gpt-5.4-mini \
+npm run run:benchmark:query-set -- --supplied-doc-bundle data/my-run/supplied-docs.jsonl
+```
+
+Or as an environment variable:
+
+```bash
+SUPPLIED_DOC_BUNDLE=data/my-run/supplied-docs.jsonl \
+BENCHMARK=benchmark-template \
+QUERY_SET=test \
+MODEL=openai-codex/gpt-5.4-mini \
+npm run run:benchmark:query-set
+```
+
+The bundle is JSONL, one query per line. The example below is formatted for readability; in the file, write each row as one JSON object on a single line:
+
+```json
+{
+  "qid": "1",
+  "question": "Which city hosted the event?",
+  "groups": [
+    {
+      "docs": [
+        {
+          "doc_id": "doc-1",
+          "cited_snippet": "The event took place in Lisbon.",
+          "full_text": "Full document text..."
+        }
+      ]
+    }
+  ]
+}
+```
+
+Each row requires:
+
+- `qid`: query id used for the per-query run artifact
+- `question`: question sent to the agent
+- `groups`: ordered document groups, each with a `docs` array
+- `doc_id`: document id recorded in run metadata and retrieval views
+- `cited_snippet`: short evidence snippet shown before the full text
+- `full_text`: supplied document text shown in the prompt
+
+When a bundle is present, the prompt tells the agent to answer from supplied documents first and use a small optional search budget only when the supplied evidence leaves a concrete gap. Supplied `doc_id` values are recorded in `metadata.supplied_docids` and counted in `surfaced_docids`, `previewed_docids`, and `agent_docids` so retrieval summaries treat injected evidence as visible evidence, not hidden oracle state.
+
 ### Shared BM25 daemon
 
 Use this when multiple benchmark workers should reuse one BM25 server:

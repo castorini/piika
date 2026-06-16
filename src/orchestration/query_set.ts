@@ -97,6 +97,11 @@ function parseArgs(argv: string[]): Args {
         args.indexPath = next;
         index += 1;
         break;
+      case "--supplied-doc-bundle":
+        if (!next) throw new Error(`${arg} requires a value`);
+        args.suppliedDocBundlePath = next;
+        index += 1;
+        break;
       case "--dryRun":
       case "--dry-run":
         args.dryRun = true;
@@ -138,6 +143,7 @@ Options:
   --query-file <path>            Explicit override; wins over benchmark defaults
   --qrels <path>                 Explicit override; wins over benchmark defaults
   --index-path <path>            Explicit override; wins over benchmark defaults
+  --supplied-doc-bundle <path>   JSONL bundle of supplied documents grouped per query
   --dry-run
 
 Benchmarks:

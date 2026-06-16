@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added generic supplied document bundles for benchmark runs via `--supplied-doc-bundle` or `SUPPLIED_DOC_BUNDLE`. Bundles inject per-query grouped evidence into the agent prompt, persist `metadata.supplied_docids`, and count supplied documents in surfaced, previewed, and agent-visible retrieval views.
+
 ### Changed
 
 - Updated the repository branding from `pi-serini` to `piika`, including the new logo and successor note while preserving historical release notes under their original name.

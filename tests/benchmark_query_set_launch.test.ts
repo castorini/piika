@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   buildBenchmarkQuerySetLaunchEnv,
+  buildRunPiBenchmarkCommand,
   resolveBenchmarkQuerySetLaunchPlan,
 } from "../src/orchestration/benchmark_query_set_launch";
 
@@ -49,4 +50,17 @@ void test("explicit PI_SEARCH_EXTENSION_CONFIG wins over Pyserini REST shorthand
 
   assert.equal(env.PI_SEARCH_EXTENSION_CONFIG, explicitConfig);
   assert.equal(env.PI_SEARCH_TOOL_INTERFACE, undefined);
+});
+
+void test("benchmark query-set launch plan propagates supplied document bundle", () => {
+  const plan = resolveBenchmarkQuerySetLaunchPlan({
+    benchmarkId: "benchmark-template",
+    querySetId: "test",
+    suppliedDocBundlePath: "data/supplied-docs/test.jsonl",
+  });
+  const env = buildBenchmarkQuerySetLaunchEnv(plan, {});
+  const command = buildRunPiBenchmarkCommand(plan);
+
+  assert.equal(env.SUPPLIED_DOC_BUNDLE, "data/supplied-docs/test.jsonl");
+  assert.deepEqual(command.slice(-2), ["--supplied-doc-bundle", "data/supplied-docs/test.jsonl"]);
 });

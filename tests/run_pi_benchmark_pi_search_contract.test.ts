@@ -259,3 +259,117 @@ void test("run_pi_benchmark records recoverable search-tool backend failures as 
     ),
   );
 });
+
+void test("run_pi_benchmark accepts a generic supplied document bundle and records supplied docids", () => {
+  const root = mkdtempSync(join(tmpdir(), "run-pi-benchmark-supplied-docs-"));
+  const queryPath = join(root, "queries.tsv");
+  const qrelsPath = join(root, "qrels.txt");
+  const suppliedDocBundlePath = join(root, "supplied-docs.jsonl");
+  const outputDir = join(root, "run");
+  const fakePiPath = join(root, "fake-pi.sh");
+  const promptCapturePath = join(root, "prompt.txt");
+
+  writeFileSync(queryPath, "1\talpha query\n", "utf8");
+  writeFileSync(qrelsPath, "1 0 supplied-1 1\n", "utf8");
+  writeFileSync(
+    suppliedDocBundlePath,
+    `${JSON.stringify({
+      qid: "1",
+      question: "alpha query",
+      groups: [
+        {
+          docs: [
+            {
+              doc_id: "supplied-1",
+              cited_snippet: "snippet text",
+              full_text: "full supplied document text",
+            },
+          ],
+        },
+      ],
+    })}\n`,
+    "utf8",
+  );
+  writeFileSync(
+    fakePiPath,
+    [
+      "#!/bin/sh",
+      "prompt=''",
+      'for arg do prompt="$arg"; done',
+      `printf '%s' "$prompt" > ${JSON.stringify(promptCapturePath)}`,
+      "printf '%s\\n' '{\"type\":\"session\"}'",
+      'printf \'%s\\n\' \'{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"Explanation: used the supplied document. Exact Answer: alpha. Confidence: 90%"}]}}\'',
+      "printf '%s\\n' '{\"type\":\"agent_end\"}'",
+    ].join("\n"),
+    "utf8",
+  );
+  chmodSync(fakePiPath, 0o755);
+
+  const output = execFileSync(
+    "npx",
+    [
+      "tsx",
+      "src/orchestration/run_pi_benchmark.ts",
+      "--benchmark",
+      "benchmark-template",
+      "--querySet",
+      "dev",
+      "--query",
+      queryPath,
+      "--qrels",
+      qrelsPath,
+      "--outputDir",
+      outputDir,
+      "--model",
+      "openai-codex/gpt-5.4-mini",
+      "--thinking",
+      "medium",
+      "--extension",
+      "src/extensions/pi_search.ts",
+      "--pi",
+      fakePiPath,
+      "--timeoutSeconds",
+      "5",
+      "--limit",
+      "1",
+      "--promptVariant",
+      "plain_minimal",
+      "--supplied-doc-bundle",
+      suppliedDocBundlePath,
+    ],
+    {
+      cwd: process.cwd(),
+      env: {
+        ...process.env,
+        PI_BM25_RPC_HOST: "127.0.0.1",
+        PI_BM25_RPC_PORT: "65535",
+      },
+      encoding: "utf8",
+    },
+  );
+
+  assert.match(output, /Finished 1\/1 queries/);
+
+  const prompt = readFileSync(promptCapturePath, "utf8");
+  assert.match(prompt, /using supplied documents and optional search tools/);
+  assert.match(prompt, /Provided documents:/);
+  assert.match(prompt, /grouped by document group/);
+  assert.match(prompt, /Document group 1:/);
+  assert.match(prompt, /docid=supplied-1/);
+
+  const setup = JSON.parse(readFileSync(join(outputDir, "run_setup.json"), "utf8")) as {
+    suppliedDocBundle?: string;
+  };
+  assert.equal(setup.suppliedDocBundle, suppliedDocBundlePath);
+
+  const run = JSON.parse(readFileSync(join(outputDir, "1.json"), "utf8")) as {
+    metadata: { supplied_docids?: string[] };
+    surfaced_docids: string[];
+    previewed_docids: string[];
+    agent_docids: string[];
+  };
+  assert.deepEqual(run.metadata.supplied_docids, ["supplied-1"]);
+  assert.deepEqual(run.surfaced_docids, ["supplied-1"]);
+  assert.deepEqual(run.previewed_docids, ["supplied-1"]);
+  assert.deepEqual(run.agent_docids, ["supplied-1"]);
+});
