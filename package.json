@@ -1,7 +1,39 @@
 {
-  "name": "piika",
-  "private": true,
+  "name": "@castorini/piika",
+  "version": "0.3.0",
+  "description": "A reusable, reproducible pi search-agent workspace",
+  "keywords": [
+    "agent",
+    "benchmark",
+    "bm25",
+    "pi",
+    "search"
+  ],
+  "homepage": "https://github.com/castorini/piika#readme",
+  "bugs": {
+    "url": "https://github.com/castorini/piika/issues"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/castorini/piika.git"
+  },
+  "bin": {
+    "piika": "./bin/piika.js"
+  },
+  "files": [
+    "bin",
+    "src",
+    "scripts",
+    "jvm",
+    "docs",
+    "CHANGELOG.md"
+  ],
   "type": "module",
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/",
+    "access": "public"
+  },
   "scripts": {
     "setup:benchmark": "npx tsx src/orchestration/setup_benchmark_entry.ts",
     "setup:browsecomp-plus": "npx tsx src/orchestration/setup_benchmark_entry.ts --benchmark browsecomp-plus --step setup",

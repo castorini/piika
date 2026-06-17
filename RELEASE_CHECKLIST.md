@@ -24,7 +24,35 @@ npm run check
 npx tsx --test tests/*.test.ts tests/**/*.test.ts
 ```
 
-## 3. Smoke-check core release workflows
+## 3. Smoke-check npm package contents
+
+Confirm the npm tarball contains the CLI wrapper, TypeScript sources, setup scripts, docs, and JVM BM25 server source:
+
+```bash
+npm pack --dry-run
+```
+
+Confirm the dry-run output includes at least:
+
+- `bin/piika.js`
+- `src/orchestration/query_set.ts`
+- `scripts/benchmarks/browsecomp_plus/setup.sh`
+- `jvm/src/main/java/dev/jhy/piserini/Bm25Server.java`
+- `docs/cli.md`
+
+For a local install smoke test:
+
+```bash
+npm pack --pack-destination /tmp
+npm uninstall -g @castorini/piika
+npm install -g /tmp/castorini-piika-<version>.tgz
+piika --help
+piika benchmarks
+piika setup benchmark-template --dry-run
+piika run --benchmark benchmark-template --query-set test --dry-run
+```
+
+## 4. Smoke-check core release workflows
 
 Run the smallest checks that validate the release narrative.
 
@@ -68,7 +96,20 @@ npx tsx src/wrappers/evaluate_run_with_pi_entry.ts --help
 npx tsx src/wrappers/report_run_markdown_entry.ts --help
 ```
 
-## 4. Final review before tagging
+## 5. Verify npm Trusted Publisher setup
+
+Before publishing a GitHub release that should publish to npm, confirm npmjs.com has a Trusted Publisher configured for the package:
+
+- Package: `@castorini/piika`
+- Provider: GitHub Actions
+- Organization/user: `castorini`
+- Repository: `piika`
+- Workflow filename: `publish-npm.yml`
+- Allowed action: `npm publish`
+
+The workflow path in this repo is `.github/workflows/publish-npm.yml`.
+
+## 6. Final review before tagging
 
 - Re-read `CHANGELOG.md` entry for the release.
 - Re-read `docs/releases/<version>.md` for external-facing wording.
@@ -77,7 +118,7 @@ npx tsx src/wrappers/report_run_markdown_entry.ts --help
   - `MS MARCO v1 Passage`
 - Confirm the release is described as index-driven if document-ingestion-first support is not included yet.
 
-## 5. Commit and tag
+## 7. Commit and tag
 
 Example:
 
@@ -87,13 +128,16 @@ git commit -m "release: prepare v0.1.0"
 git tag -a v0.1.0 -m "v0.1.0"
 ```
 
-## 6. Publish release notes
+## 8. Publish GitHub release and npm package
 
 - Create a GitHub release for tag `v0.1.0`.
 - Use `docs/releases/v0.1.0.md` as the release body.
 - Verify links and code blocks render correctly in GitHub's release UI.
+- Publishing the GitHub release triggers `.github/workflows/publish-npm.yml`.
+- Confirm the `Publish npm package` workflow succeeds.
+- Confirm the expected version appears on npm.
 
-## 7. Post-release follow-up
+## 9. Post-release follow-up
 
 - Announce the release.
 - Open or prioritize the next milestone items for:
