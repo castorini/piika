@@ -111,6 +111,32 @@ Use `--dry-run` to print the resolved run plan and downstream command:
 piika run --benchmark benchmark-template --query-set test --dry-run
 ```
 
+#### Pyserini REST two-tool interface
+
+To run the CLI against a Pyserini REST service, set the Pyserini REST environment variables before invoking `piika run`:
+
+```bash
+PYSERINI_REST_BASE_URL=http://127.0.0.1:8081 \
+PYSERINI_REST_INDEX=browsecomp-plus \
+piika run \
+  --benchmark browsecomp-plus \
+  --query-set q9
+```
+
+When both `PYSERINI_REST_BASE_URL` and `PYSERINI_REST_INDEX` are set, the launcher builds the Pyserini REST `PI_SEARCH_EXTENSION_CONFIG` and selects `PI_SEARCH_TOOL_INTERFACE=pyserini-rest-2tool` automatically. You may set `PI_SEARCH_TOOL_INTERFACE=pyserini-rest-2tool` explicitly, but it is not required for this shortcut.
+
+Optional Pyserini REST environment variables:
+
+```bash
+PYSERINI_REST_READ_MODE=paginated              # full or paginated; default shortcut behavior is paginated
+PYSERINI_REST_SEARCH_MAX_DOC_LENGTH=500        # max_doc_length for search previews
+PYSERINI_REST_TOKEN_ENV=PYSERINI_API_TOKEN     # env var containing a bearer token
+```
+
+For authenticated endpoints, either put the token in `PYSERINI_API_TOKEN` or set `PYSERINI_REST_TOKEN_ENV` to another environment variable name that contains the token.
+
+For the full backend configuration details, see `docs/pyserini-rest-search-provider.md`.
+
 ### Shared BM25 mode
 
 Shared mode starts one BM25 daemon and runs the selected query set against it:
@@ -228,6 +254,13 @@ The CLI preserves the environment-variable behavior of the underlying entrypoint
 - `PI_BM25_K1`
 - `PI_BM25_B`
 - `PI_BM25_THREADS`
+- `PYSERINI_REST_BASE_URL`
+- `PYSERINI_REST_INDEX`
+- `PYSERINI_REST_TOKEN_ENV`
+- `PYSERINI_REST_READ_MODE`
+- `PYSERINI_REST_SEARCH_MAX_DOC_LENGTH`
+- `PI_SEARCH_EXTENSION_CONFIG`
+- `PI_SEARCH_TOOL_INTERFACE`
 
 Flags take precedence where the underlying entrypoint already gives flags precedence.
 
