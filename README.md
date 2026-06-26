@@ -65,6 +65,7 @@ If Java is installed in a non-standard location, set `JAVA_HOME` explicitly befo
 Pi packages now live under the `@earendil-works/*` npm namespace. This repo depends on `@earendil-works/pi-coding-agent` and `@earendil-works/pi-tui`; use that namespace for any local extension or SDK imports rather than the retired `@mariozechner/*` package names.
 
 Model note: `gpt-5.3-codex` was used for some historical judge runs, but OpenAI's Codex model documentation now lists it as deprecated when signing in with ChatGPT. Use the current recommended Codex models for new subscription-backed runs, and label any replacement judge model explicitly in reports.
+- 2026-06-26: Default judge model updated to gpt-5.5. 
 
 ## Quickstart
 

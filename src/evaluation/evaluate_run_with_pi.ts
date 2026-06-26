@@ -144,7 +144,7 @@ function parseArgs(argv: string[]): Args {
     groundTruthPath: "",
     qrelEvidencePath: "",
     judgeMode: undefined,
-    model: "openai-codex/gpt-5.3-codex",
+    model: "openai-codex/gpt-5.5",
     thinking: "low",
     piBin: "pi",
     force: false,
@@ -286,7 +286,7 @@ Options:
   --groundTruth, --ground_truth    Ground truth JSONL path (required in gold-answer mode unless benchmark defaults it)
   --qrelEvidence, --qrel_evidence  Qrel evidence path (default: benchmark primary qrels)
   --judgeMode, --judge-mode        Judge mode: gold-answer or reference-free
-  --model                          Judge model (default: openai-codex/gpt-5.3-codex)
+  --model                          Judge model (default: openai-codex/gpt-5.5)
   --thinking                       Pi thinking level (default: low)
   --pi, --piBin, --pi_bin          Pi binary (default: pi)
   --timeoutSeconds                 Judge timeout in seconds (default: 180)
