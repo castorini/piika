@@ -186,7 +186,7 @@ function main(): void {
     "--judgeMode",
     judgeMode,
     "--model",
-    args.model ?? readEnv("MODEL") ?? "openai-codex/gpt-5.3-codex",
+    args.model ?? readEnv("MODEL") ?? "openai-codex/gpt-5.5",
     "--thinking",
     args.thinking ?? readEnv("THINKING") ?? "low",
     "--pi",
