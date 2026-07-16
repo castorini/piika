@@ -50,3 +50,18 @@ void test("explicit PI_SEARCH_EXTENSION_CONFIG wins over Pyserini REST shorthand
   assert.equal(env.PI_SEARCH_EXTENSION_CONFIG, explicitConfig);
   assert.equal(env.PI_SEARCH_TOOL_INTERFACE, undefined);
 });
+
+void test("benchmark query-set launch plan carries ranked-list output mode", () => {
+  const plan = resolveBenchmarkQuerySetLaunchPlan({
+    benchmarkId: "benchmark-template",
+    querySetId: "test",
+    outputMode: "ranked_list",
+    rankedListDepth: 25,
+  });
+  const env = buildBenchmarkQuerySetLaunchEnv(plan, {});
+
+  assert.equal(plan.outputMode, "ranked_list");
+  assert.equal(plan.rankedListDepth, 25);
+  assert.equal(env.OUTPUT_MODE, "ranked_list");
+  assert.equal(env.RANKED_LIST_DEPTH, "25");
+});

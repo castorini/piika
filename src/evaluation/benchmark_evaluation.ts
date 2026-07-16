@@ -1,5 +1,6 @@
 import {
   getBenchmarkDefinition,
+  getBenchmarkQueryPath,
   resolveInternalRetrievalMetricSemantics,
 } from "../benchmarks/registry";
 import type {
@@ -28,9 +29,11 @@ export type ResolvedBenchmarkJudgeEvaluation = {
 
 export function resolveBenchmarkRetrievalEvaluation(options: {
   benchmarkId?: string;
+  querySetId?: string;
   sourceType: BenchmarkRetrievalSourceType;
 }): ResolvedBenchmarkRetrievalEvaluation {
   const benchmark = getBenchmarkDefinition(options.benchmarkId);
+  const { querySet } = getBenchmarkQueryPath(benchmark.id, options.querySetId);
   const retrievalEvaluation = benchmark.retrievalEvaluation;
   return {
     benchmarkId: benchmark.id,
@@ -41,7 +44,7 @@ export function resolveBenchmarkRetrievalEvaluation(options: {
         : retrievalEvaluation.runDirBackend,
     runFileBackend: retrievalEvaluation.runFileBackend,
     runDirBackend: retrievalEvaluation.runDirBackend,
-    trecEvalMetrics: retrievalEvaluation.trecEvalMetrics,
+    trecEvalMetrics: querySet.trecEvalMetrics ?? retrievalEvaluation.trecEvalMetrics,
     internalMetricSemantics: resolveInternalRetrievalMetricSemantics(benchmark.id),
   };
 }

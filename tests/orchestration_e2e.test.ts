@@ -84,6 +84,10 @@ void test("package run:benchmark:query-set script drives the active orchestratio
     "300",
     "--promptVariant",
     "plain_minimal",
+    "--outputMode",
+    "answer",
+    "--rankedListDepth",
+    "1000",
   ]);
 });
 

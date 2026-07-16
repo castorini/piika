@@ -3,7 +3,9 @@ import {
   getDefaultBenchmarkId,
   resolveBenchmarkConfig,
 } from "../benchmarks/registry";
+import { DEFAULT_RANKED_LIST_DEPTH } from "../evaluation/ranked_list_output";
 import { buildPyseriniRestExtensionConfig } from "../pi-search/config";
+import type { PiSearchOutputMode } from "../pi-search/agent_prompt";
 import { buildTsxCommand } from "../runtime/tsx";
 
 export type BenchmarkQuerySetLaunchArgs = {
@@ -19,6 +21,8 @@ export type BenchmarkQuerySetLaunchArgs = {
   queryPath?: string;
   qrelsPath?: string;
   indexPath?: string;
+  outputMode?: string;
+  rankedListDepth?: number;
 };
 
 export type BenchmarkQuerySetLaunchPlan = {
@@ -34,6 +38,8 @@ export type BenchmarkQuerySetLaunchPlan = {
   queryPath: string;
   qrelsPath: string;
   indexPath: string;
+  outputMode: PiSearchOutputMode;
+  rankedListDepth: number;
 };
 
 export function readEnv(name: string): string | undefined {
@@ -63,6 +69,12 @@ function parsePyseriniRestReadMode(value: string | undefined): "full" | "paginat
   if (!value) return undefined;
   if (value === "full" || value === "paginated") return value;
   throw new Error(`PYSERINI_REST_READ_MODE must be "full" or "paginated"; received ${value}`);
+}
+
+function parseOutputMode(value: string | undefined): PiSearchOutputMode {
+  if (!value) return "answer";
+  if (value === "answer" || value === "ranked_list") return value;
+  throw new Error(`OUTPUT_MODE must be "answer" or "ranked_list"; received ${value}`);
 }
 
 function buildPyseriniRestEnvShortcut(baseEnv: NodeJS.ProcessEnv): Record<string, string> {
@@ -115,6 +127,14 @@ export function resolveBenchmarkQuerySetLaunchPlan(
   });
   const piSearchPromptVariant =
     args.promptVariant ?? readEnv("PROMPT_VARIANT") ?? benchmark.piSearchPromptVariant;
+  const rankedListDepth =
+    args.rankedListDepth ??
+    (readEnv("RANKED_LIST_DEPTH")
+      ? parseInteger(readEnv("RANKED_LIST_DEPTH") as string, "RANKED_LIST_DEPTH")
+      : DEFAULT_RANKED_LIST_DEPTH);
+  if (rankedListDepth <= 0) {
+    throw new Error(`RANKED_LIST_DEPTH must be a positive integer; received ${rankedListDepth}`);
+  }
 
   return {
     benchmarkId: benchmark.id,
@@ -136,6 +156,8 @@ export function resolveBenchmarkQuerySetLaunchPlan(
     queryPath: config.queryPath,
     qrelsPath: config.qrelsPath,
     indexPath: config.indexPath,
+    outputMode: parseOutputMode(args.outputMode ?? readEnv("OUTPUT_MODE")),
+    rankedListDepth,
   };
 }
 
@@ -159,6 +181,8 @@ export function buildBenchmarkQuerySetLaunchEnv(
     EXTENSION: plan.extensionPath,
     PI_BM25_INDEX_PATH: plan.indexPath,
     PROMPT_VARIANT: plan.piSearchPromptVariant,
+    OUTPUT_MODE: plan.outputMode,
+    RANKED_LIST_DEPTH: String(plan.rankedListDepth),
   };
 }
 
@@ -186,6 +210,10 @@ export function buildRunPiBenchmarkCommand(plan: BenchmarkQuerySetLaunchPlan): s
     String(plan.timeoutSeconds),
     "--promptVariant",
     plan.piSearchPromptVariant,
+    "--outputMode",
+    plan.outputMode,
+    "--rankedListDepth",
+    String(plan.rankedListDepth),
   ]);
 }
 
@@ -193,6 +221,10 @@ export function printBenchmarkQuerySetLaunchPlan(plan: BenchmarkQuerySetLaunchPl
   console.log(`BENCHMARK=${plan.benchmarkId}`);
   console.log(`QUERY_SET=${plan.querySetId}`);
   console.log(`PROMPT_VARIANT=${plan.piSearchPromptVariant}`);
+  console.log(`OUTPUT_MODE=${plan.outputMode}`);
+  if (plan.outputMode === "ranked_list") {
+    console.log(`RANKED_LIST_DEPTH=${plan.rankedListDepth}`);
+  }
   console.log(`MODEL=${plan.model}`);
   console.log(`QUERY_FILE=${plan.queryPath}`);
   console.log(`QRELS_FILE=${plan.qrelsPath}`);

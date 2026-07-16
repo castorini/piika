@@ -627,6 +627,10 @@ void test("node low-level benchmark entrypoint resolves manifest-aligned default
     "300",
     "--promptVariant",
     "plain_minimal",
+    "--outputMode",
+    "answer",
+    "--rankedListDepth",
+    "1000",
   ]);
 });
 
@@ -752,6 +756,10 @@ void test("node benchmark query-set entrypoint resolves manifest-aligned default
     "300",
     "--promptVariant",
     "plain_minimal",
+    "--outputMode",
+    "answer",
+    "--rankedListDepth",
+    "1000",
   ]);
 });
 

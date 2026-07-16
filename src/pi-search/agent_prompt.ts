@@ -3,6 +3,12 @@ Explanation: {your explanation for your final answer. Cite supporting docids inl
 Exact Answer: {your succinct, final answer}
 Confidence: {your confidence score between 0% and 100%}`;
 
+const RANKED_LIST_RESPONSE_FORMAT = `Your final response must be only a ranked list of document ids, one document per line, using exactly this format:
+1. {docid}
+2. {docid}
+3. {docid}
+Do not include explanations, scores, titles, snippets, citations, or any text before or after the ranked list.`;
+
 const SUBMIT_NOW_REMINDER = `If you later receive a user steer telling you to submit now, stop using tools immediately and answer right away with the exact final response format below. Do not do more research after that steer.`;
 
 export const PI_SEARCH_QUERY_TEMPLATE_PLAIN_MINIMAL = `You are a deep research agent answering a question using only the provided tools.
@@ -22,11 +28,36 @@ Workflow:
 
 Question: {Question}`;
 
+export const PI_SEARCH_QUERY_TEMPLATE_RANKED_LIST = `You are a retrieval agent producing a single ranked list for a traditional IR benchmark.
+
+Workflow:
+1. Use search with a concise raw query string based on the original query.
+2. Prefer short lexical searches over long natural-language rewrites.
+3. Inspect enough returned search results to build a strong final ranking.
+4. If a document may be relevant but the snippet is insufficient, inspect it with read_document.
+5. Use search refinements only when they add a genuinely new clue from what you already saw.
+6. Deduplicate document ids. A document id must appear at most once in the final ranked list.
+7. Rank documents by estimated relevance to the query, most relevant first.
+8. Return as many relevant candidates as you can, up to {RankedListDepth} document ids.
+9. As soon as you have enough candidates or cannot improve the ranking, stop using tools and answer in plain assistant text.
+10. ${RANKED_LIST_RESPONSE_FORMAT}
+11. ${SUBMIT_NOW_REMINDER}
+
+Query: {Question}`;
+
 export type PiSearchPromptVariant = "plain_minimal";
+export type PiSearchOutputMode = "answer" | "ranked_list";
 
 export function formatPiSearchPrompt(
   query: string,
   _variant: PiSearchPromptVariant = "plain_minimal",
+  options?: { outputMode?: PiSearchOutputMode; rankedListDepth?: number },
 ): string {
+  if (options?.outputMode === "ranked_list") {
+    return PI_SEARCH_QUERY_TEMPLATE_RANKED_LIST.replace("{Question}", query).replace(
+      "{RankedListDepth}",
+      String(options.rankedListDepth ?? 1000),
+    );
+  }
   return PI_SEARCH_QUERY_TEMPLATE_PLAIN_MINIMAL.replace("{Question}", query);
 }

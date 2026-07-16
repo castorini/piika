@@ -57,6 +57,7 @@ export type BenchmarkJudgeEvaluationDefinition = {
 export type BenchmarkQuerySetDefinition = {
   queryPath: string;
   qrelsPath?: string;
+  trecEvalMetrics?: BenchmarkTrecEvalMetricDefinition[];
   secondaryQrelsPath?: string;
   groundTruthPath?: string;
   indexPath?: string;

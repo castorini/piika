@@ -137,6 +137,31 @@ MODEL=openai-codex/gpt-5.4-mini \
 npm run run:benchmark:query-set
 ```
 
+### Ranked-list output mode
+
+For traditional retrieval benchmarks, set `OUTPUT_MODE=ranked_list` to ask the agent to return a single ranked docid list instead of a final answer. Each per-query JSON records `ranked_docids`, and the run directory receives `ranked_list.trec` for standard qrels-based evaluation.
+
+```bash
+OUTPUT_MODE=ranked_list \
+RANKED_LIST_DEPTH=1000 \
+BENCHMARK=msmarco-v1-passage \
+QUERY_SET=dl20 \
+MODEL=openai-codex/gpt-5.4-mini \
+npm run run:benchmark:query-set:shared-bm25
+```
+
+Evaluate the generated run file with the existing trec_eval wrapper:
+
+```bash
+npx tsx src/evaluation/eval_retrieval_trec_eval.ts \
+  --benchmark msmarco-v1-passage \
+  --query-set dl20 \
+  --run-file runs/<run>/ranked_list.trec
+```
+
+The reproducible MS MARCO comparison protocol and recorded GPT-5.5 results are tracked in
+[`docs/msmarco-v1-passage-ranked-list-results.md`](docs/msmarco-v1-passage-ranked-list-results.md).
+
 ### BM25 tuning during benchmark runs
 
 Benchmark runs accept BM25 tuning through environment variables:

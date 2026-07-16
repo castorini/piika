@@ -52,6 +52,18 @@ function parseArgs(argv: string[]): Args {
         args.promptVariant = next;
         index += 1;
         break;
+      case "--outputMode":
+      case "--output-mode":
+        if (!next) throw new Error(`${arg} requires a value`);
+        args.outputMode = next;
+        index += 1;
+        break;
+      case "--rankedListDepth":
+      case "--ranked-list-depth":
+        if (!next) throw new Error(`${arg} requires a value`);
+        args.rankedListDepth = parseInteger(next, "rankedListDepth");
+        index += 1;
+        break;
       case "--outputDir":
       case "--output-dir":
         if (!next) throw new Error(`${arg} requires a value`);
@@ -130,6 +142,8 @@ Options:
   --query-set <id>               Query set id for the selected benchmark (default: benchmark default query set)
   --model <model>
   --prompt-variant <variant>
+  --output-mode <answer|ranked_list>
+  --ranked-list-depth <n>        Max requested ranked-list length (default: 1000)
   --output-dir <dir>
   --timeout-seconds <seconds>
   --thinking <level>

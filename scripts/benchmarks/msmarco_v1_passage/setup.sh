@@ -19,12 +19,17 @@ DL19_TOPICS_URL="${MSMARCO_V1_PASSAGE_DL19_TOPICS_URL:-https://raw.githubusercon
 DL19_QRELS_URL="${MSMARCO_V1_PASSAGE_DL19_QRELS_URL:-https://raw.githubusercontent.com/castorini/anserini-tools/303096fd01ab1ee5048adc6b4a25d55761e6c860/topics-and-qrels/qrels.dl19-passage.txt}"
 DL20_TOPICS_URL="${MSMARCO_V1_PASSAGE_DL20_TOPICS_URL:-https://raw.githubusercontent.com/castorini/anserini-tools/303096fd01ab1ee5048adc6b4a25d55761e6c860/topics-and-qrels/topics.dl20.txt}"
 DL20_QRELS_URL="${MSMARCO_V1_PASSAGE_DL20_QRELS_URL:-https://raw.githubusercontent.com/castorini/anserini-tools/303096fd01ab1ee5048adc6b4a25d55761e6c860/topics-and-qrels/qrels.dl20-passage.txt}"
+DEV_TOPICS_URL="${MSMARCO_V1_PASSAGE_DEV_TOPICS_URL:-https://raw.githubusercontent.com/castorini/anserini-tools/12982126736f2ed7dc45bf30acb2af9fed13c0ef/topics-and-qrels/topics.msmarco-passage.dev-subset.txt}"
+DEV_QRELS_URL="${MSMARCO_V1_PASSAGE_DEV_QRELS_URL:-https://raw.githubusercontent.com/castorini/anserini-tools/12982126736f2ed7dc45bf30acb2af9fed13c0ef/topics-and-qrels/qrels.msmarco-passage.dev-subset.txt}"
 DL19_SOURCE_QUERIES="$SOURCE_DIR/topics.dl19-passage.tsv"
 DL20_SOURCE_QUERIES="$SOURCE_DIR/topics.dl20.tsv"
+DEV_SOURCE_QUERIES="$SOURCE_DIR/topics.dev-passage.tsv"
 DL19_QRELS_FILE="$QRELS_DIR/qrels.dl19-passage.txt"
 DL20_QRELS_FILE="$QRELS_DIR/qrels.dl20-passage.txt"
+DEV_QRELS_FILE="$QRELS_DIR/qrels.dev-passage.txt"
 DL19_BASELINE_RUN="$SOURCE_DIR/bm25_pure.dl19.trec"
 DL20_BASELINE_RUN="$SOURCE_DIR/bm25_pure.dl20.trec"
+DEV_BASELINE_RUN="$SOURCE_DIR/bm25_pure.dev.trec"
 
 log() {
   printf '[setup:msmarco-v1-passage] %s\n' "$*"
@@ -132,6 +137,11 @@ main() {
   log "Downloading MSMARCO dl20 qrels from $DL20_QRELS_URL"
   fetch_file "$DL20_QRELS_URL" "$DL20_QRELS_FILE"
 
+  log "Downloading MSMARCO dev topics from $DEV_TOPICS_URL"
+  fetch_file "$DEV_TOPICS_URL" "$DEV_SOURCE_QUERIES"
+  log "Downloading MSMARCO dev qrels from $DEV_QRELS_URL"
+  fetch_file "$DEV_QRELS_URL" "$DEV_QRELS_FILE"
+
   log 'Materializing benchmark query sets'
   bash scripts/benchmarks/msmarco_v1_passage/generate_query_slices.sh
 
@@ -148,17 +158,24 @@ main() {
 
   write_baseline_run "$DL19_SOURCE_QUERIES" "$DL19_BASELINE_RUN" 'dl19'
   write_baseline_run "$DL20_SOURCE_QUERIES" "$DL20_BASELINE_RUN" 'dl20'
+  write_baseline_run "$DEV_SOURCE_QUERIES" "$DEV_BASELINE_RUN" 'dev'
 
   log 'Setup complete.'
   log 'Prepared local outputs:'
   log "- $DL19_SOURCE_QUERIES"
   log "- $DL20_SOURCE_QUERIES"
+  log "- $DEV_SOURCE_QUERIES"
   log "- $DL19_QRELS_FILE"
   log "- $DL20_QRELS_FILE"
+  log "- $DEV_QRELS_FILE"
   log "- $DATASET_ROOT/queries/dl19.tsv"
   log "- $DATASET_ROOT/queries/dl20.tsv"
+  log "- $DATASET_ROOT/queries/dl19-judged.tsv"
+  log "- $DATASET_ROOT/queries/dl20-judged.tsv"
+  log "- $DATASET_ROOT/queries/dev.tsv"
   log "- $DL19_BASELINE_RUN"
   log "- $DL20_BASELINE_RUN"
+  log "- $DEV_BASELINE_RUN"
   log "- $INDEX_DIR"
   log "- $INDEX_ARCHIVE"
   log "- $ANSERINI_JAR"
