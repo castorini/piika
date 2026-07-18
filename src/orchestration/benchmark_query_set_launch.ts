@@ -23,6 +23,7 @@ export type BenchmarkQuerySetLaunchArgs = {
   indexPath?: string;
   outputMode?: string;
   rankedListDepth?: number;
+  rankedListCount?: number;
 };
 
 export type BenchmarkQuerySetLaunchPlan = {
@@ -40,6 +41,7 @@ export type BenchmarkQuerySetLaunchPlan = {
   indexPath: string;
   outputMode: PiSearchOutputMode;
   rankedListDepth: number;
+  rankedListCount?: number;
 };
 
 export function readEnv(name: string): string | undefined {
@@ -135,6 +137,19 @@ export function resolveBenchmarkQuerySetLaunchPlan(
   if (rankedListDepth <= 0) {
     throw new Error(`RANKED_LIST_DEPTH must be a positive integer; received ${rankedListDepth}`);
   }
+  const rankedListCount =
+    args.rankedListCount ??
+    (readEnv("RANKED_LIST_COUNT")
+      ? parseInteger(readEnv("RANKED_LIST_COUNT") as string, "RANKED_LIST_COUNT")
+      : undefined);
+  if (rankedListCount !== undefined && rankedListCount <= 0) {
+    throw new Error(`RANKED_LIST_COUNT must be a positive integer; received ${rankedListCount}`);
+  }
+  if (rankedListCount !== undefined && rankedListCount > rankedListDepth) {
+    throw new Error(
+      `RANKED_LIST_COUNT (${rankedListCount}) cannot exceed RANKED_LIST_DEPTH (${rankedListDepth})`,
+    );
+  }
 
   return {
     benchmarkId: benchmark.id,
@@ -158,6 +173,7 @@ export function resolveBenchmarkQuerySetLaunchPlan(
     indexPath: config.indexPath,
     outputMode: parseOutputMode(args.outputMode ?? readEnv("OUTPUT_MODE")),
     rankedListDepth,
+    rankedListCount,
   };
 }
 
@@ -183,6 +199,7 @@ export function buildBenchmarkQuerySetLaunchEnv(
     PROMPT_VARIANT: plan.piSearchPromptVariant,
     OUTPUT_MODE: plan.outputMode,
     RANKED_LIST_DEPTH: String(plan.rankedListDepth),
+    RANKED_LIST_COUNT: plan.rankedListCount ? String(plan.rankedListCount) : undefined,
   };
 }
 
@@ -214,6 +231,7 @@ export function buildRunPiBenchmarkCommand(plan: BenchmarkQuerySetLaunchPlan): s
     plan.outputMode,
     "--rankedListDepth",
     String(plan.rankedListDepth),
+    ...(plan.rankedListCount ? ["--rankedListCount", String(plan.rankedListCount)] : []),
   ]);
 }
 
@@ -224,6 +242,9 @@ export function printBenchmarkQuerySetLaunchPlan(plan: BenchmarkQuerySetLaunchPl
   console.log(`OUTPUT_MODE=${plan.outputMode}`);
   if (plan.outputMode === "ranked_list") {
     console.log(`RANKED_LIST_DEPTH=${plan.rankedListDepth}`);
+    if (plan.rankedListCount) {
+      console.log(`RANKED_LIST_COUNT=${plan.rankedListCount}`);
+    }
   }
   console.log(`MODEL=${plan.model}`);
   console.log(`QUERY_FILE=${plan.queryPath}`);

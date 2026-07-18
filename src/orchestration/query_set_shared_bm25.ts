@@ -27,6 +27,7 @@ type Args = {
   indexPath?: string;
   outputMode?: string;
   rankedListDepth?: number;
+  rankedListCount?: number;
   dryRun: boolean;
 };
 
@@ -105,6 +106,12 @@ function parseArgs(argv: string[]): Args {
         args.rankedListDepth = parseInteger(next, "rankedListDepth");
         index += 1;
         break;
+      case "--rankedListCount":
+      case "--ranked-list-count":
+        if (!next) throw new Error(`${arg} requires a value`);
+        args.rankedListCount = parseInteger(next, "rankedListCount");
+        index += 1;
+        break;
       case "--port":
         if (!next) throw new Error(`${arg} requires a value`);
         args.port = parseInteger(next, "port");
@@ -145,6 +152,7 @@ Options:
   --index-path <path>            Explicit override; wins over benchmark defaults
   --output-mode <answer|ranked_list>
   --ranked-list-depth <n>        Max requested ranked-list length (default: 1000)
+  --ranked-list-count <n>        Require exactly this many ranked docids
   --dry-run
 `);
 }
@@ -159,6 +167,7 @@ function resolveSharedLaunchPlan(args: Args): SharedLaunchPlan {
     indexPath: args.indexPath,
     outputMode: args.outputMode,
     rankedListDepth: args.rankedListDepth,
+    rankedListCount: args.rankedListCount,
   });
   const host = args.host ?? readEnv("PI_BM25_RPC_HOST") ?? "127.0.0.1";
   const port =

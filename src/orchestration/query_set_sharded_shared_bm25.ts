@@ -47,6 +47,7 @@ type Args = {
   indexPath?: string;
   outputMode?: string;
   rankedListDepth?: number;
+  rankedListCount?: number;
   host?: string;
   port?: number;
   autoSummarizeOnMerge?: boolean;
@@ -107,6 +108,7 @@ type PersistedRunSetup = {
   searchBackendKind?: string;
   outputMode?: string;
   rankedListDepth?: string;
+  rankedListCount?: string;
 };
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -244,6 +246,12 @@ function parseArgs(argv: string[]): Args {
         args.rankedListDepth = parseInteger(next, "rankedListDepth");
         index += 1;
         break;
+      case "--rankedListCount":
+      case "--ranked-list-count":
+        if (!next) throw new Error(`${arg} requires a value`);
+        args.rankedListCount = parseInteger(next, "rankedListCount");
+        index += 1;
+        break;
       case "--host":
         if (!next) throw new Error(`${arg} requires a value`);
         args.host = next;
@@ -334,6 +342,7 @@ Options:
   --index-path <path>            Explicit override; wins over benchmark defaults
   --output-mode <answer|ranked_list>
   --ranked-list-depth <n>        Max requested ranked-list length (default: 1000)
+  --ranked-list-count <n>        Require exactly this many ranked docids
   --host <host>
   --port <port>
   --max-shard-attempts <n>
@@ -363,6 +372,7 @@ function resolveShardedLaunchPlan(args: Args): ShardedLaunchPlan {
     indexPath: args.indexPath,
     outputMode: args.outputMode,
     rankedListDepth: args.rankedListDepth,
+    rankedListCount: args.rankedListCount,
   });
   const shardCount =
     args.shardCount ??
@@ -443,6 +453,9 @@ function printShardedLaunchPlan(plan: ShardedLaunchPlan): void {
   console.log(`OUTPUT_MODE=${plan.outputMode}`);
   if (plan.outputMode === "ranked_list") {
     console.log(`RANKED_LIST_DEPTH=${plan.rankedListDepth}`);
+    if (plan.rankedListCount) {
+      console.log(`RANKED_LIST_COUNT=${plan.rankedListCount}`);
+    }
   }
   console.log(`MODEL=${plan.model}`);
   console.log(`QUERY_FILE=${plan.queryPath}`);
@@ -567,6 +580,7 @@ function buildPersistedRunSetup(args: {
   backendKind: "shared-bm25" | "pyserini-rest";
   outputMode: string;
   rankedListDepth: number;
+  rankedListCount?: number;
 }): PersistedRunSetup {
   return {
     slice: args.querySetId,
@@ -589,6 +603,10 @@ function buildPersistedRunSetup(args: {
     searchBackendKind: args.backendKind,
     outputMode: args.outputMode,
     rankedListDepth: args.outputMode === "ranked_list" ? String(args.rankedListDepth) : undefined,
+    rankedListCount:
+      args.outputMode === "ranked_list" && args.rankedListCount
+        ? String(args.rankedListCount)
+        : undefined,
   };
 }
 
@@ -623,6 +641,7 @@ function writeMergedRunMetadata(plan: ShardedLaunchPlan, totalQueries: number): 
         backendKind: plan.backendKind,
         outputMode: plan.outputMode,
         rankedListDepth: plan.rankedListDepth,
+        rankedListCount: plan.rankedListCount,
       }),
       null,
       2,
@@ -715,6 +734,7 @@ function spawnShard(plan: ShardedLaunchPlan, shard: ShardFile, attempt: number):
     plan.outputMode,
     "--ranked-list-depth",
     String(plan.rankedListDepth),
+    ...(plan.rankedListCount ? ["--ranked-list-count", String(plan.rankedListCount)] : []),
     "--qrels",
     plan.qrelsPath,
     "--index-path",

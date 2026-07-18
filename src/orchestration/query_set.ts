@@ -64,6 +64,12 @@ function parseArgs(argv: string[]): Args {
         args.rankedListDepth = parseInteger(next, "rankedListDepth");
         index += 1;
         break;
+      case "--rankedListCount":
+      case "--ranked-list-count":
+        if (!next) throw new Error(`${arg} requires a value`);
+        args.rankedListCount = parseInteger(next, "rankedListCount");
+        index += 1;
+        break;
       case "--outputDir":
       case "--output-dir":
         if (!next) throw new Error(`${arg} requires a value`);
@@ -144,6 +150,7 @@ Options:
   --prompt-variant <variant>
   --output-mode <answer|ranked_list>
   --ranked-list-depth <n>        Max requested ranked-list length (default: 1000)
+  --ranked-list-count <n>        Require exactly this many ranked docids
   --output-dir <dir>
   --timeout-seconds <seconds>
   --thinking <level>

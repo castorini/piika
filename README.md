@@ -150,6 +150,23 @@ MODEL=openai-codex/gpt-5.4-mini \
 npm run run:benchmark:query-set:shared-bm25
 ```
 
+To request an exact-size ranking, set `RANKED_LIST_COUNT` in addition to the maximum
+depth. For example, this asks the agent for exactly 30 unique docids:
+
+```bash
+OUTPUT_MODE=ranked_list \
+RANKED_LIST_DEPTH=30 \
+RANKED_LIST_COUNT=30 \
+BENCHMARK=msmarco-v1-passage \
+QUERY_SET=dl20 \
+npm run run:benchmark:query-set:shared-bm25
+```
+
+The equivalent CLI option is `--ranked-list-count 30`. Outputs longer than the requested
+count are truncated. Shorter outputs are preserved and marked with
+`ranked_list_count_error` in the per-query JSON; Piika does not silently pad the ranking
+with documents the agent did not select.
+
 Evaluate the generated run file with the existing trec_eval wrapper:
 
 ```bash

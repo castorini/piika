@@ -57,11 +57,28 @@ void test("benchmark query-set launch plan carries ranked-list output mode", () 
     querySetId: "test",
     outputMode: "ranked_list",
     rankedListDepth: 25,
+    rankedListCount: 20,
   });
   const env = buildBenchmarkQuerySetLaunchEnv(plan, {});
 
   assert.equal(plan.outputMode, "ranked_list");
   assert.equal(plan.rankedListDepth, 25);
+  assert.equal(plan.rankedListCount, 20);
   assert.equal(env.OUTPUT_MODE, "ranked_list");
   assert.equal(env.RANKED_LIST_DEPTH, "25");
+  assert.equal(env.RANKED_LIST_COUNT, "20");
+});
+
+void test("ranked-list exact count cannot exceed the configured depth", () => {
+  assert.throws(
+    () =>
+      resolveBenchmarkQuerySetLaunchPlan({
+        benchmarkId: "benchmark-template",
+        querySetId: "test",
+        outputMode: "ranked_list",
+        rankedListDepth: 20,
+        rankedListCount: 30,
+      }),
+    /RANKED_LIST_COUNT \(30\) cannot exceed RANKED_LIST_DEPTH \(20\)/,
+  );
 });

@@ -38,7 +38,7 @@ Workflow:
 5. Use search refinements only when they add a genuinely new clue from what you already saw.
 6. Deduplicate document ids. A document id must appear at most once in the final ranked list.
 7. Rank documents by estimated relevance to the query, most relevant first.
-8. Return as many relevant candidates as you can, up to {RankedListDepth} document ids.
+8. {RankedListCountInstruction}
 9. As soon as you have enough candidates or cannot improve the ranking, stop using tools and answer in plain assistant text.
 10. ${RANKED_LIST_RESPONSE_FORMAT}
 11. ${SUBMIT_NOW_REMINDER}
@@ -51,12 +51,20 @@ export type PiSearchOutputMode = "answer" | "ranked_list";
 export function formatPiSearchPrompt(
   query: string,
   _variant: PiSearchPromptVariant = "plain_minimal",
-  options?: { outputMode?: PiSearchOutputMode; rankedListDepth?: number },
+  options?: {
+    outputMode?: PiSearchOutputMode;
+    rankedListDepth?: number;
+    rankedListCount?: number;
+  },
 ): string {
   if (options?.outputMode === "ranked_list") {
+    const depth = options.rankedListDepth ?? 1000;
+    const countInstruction = options.rankedListCount
+      ? `Return exactly ${options.rankedListCount} unique document ids. Continue searching until you have at least ${options.rankedListCount} plausible candidates; do not return fewer than ${options.rankedListCount}.`
+      : `Return as many relevant candidates as you can, up to ${depth} document ids.`;
     return PI_SEARCH_QUERY_TEMPLATE_RANKED_LIST.replace("{Question}", query).replace(
-      "{RankedListDepth}",
-      String(options.rankedListDepth ?? 1000),
+      "{RankedListCountInstruction}",
+      countInstruction,
     );
   }
   return PI_SEARCH_QUERY_TEMPLATE_PLAIN_MINIMAL.replace("{Question}", query);

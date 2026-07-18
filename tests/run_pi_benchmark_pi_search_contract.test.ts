@@ -231,7 +231,9 @@ void test("run_pi_benchmark ranked_list mode parses final ranking and writes TRE
       "--outputMode",
       "ranked_list",
       "--rankedListDepth",
-      "2",
+      "10",
+      "--rankedListCount",
+      "3",
     ],
     {
       cwd: process.cwd(),
@@ -247,17 +249,20 @@ void test("run_pi_benchmark ranked_list mode parses final ranking and writes TRE
   assert.match(output, /Wrote ranked-list TREC run file/);
 
   const run = JSON.parse(readFileSync(join(outputDir, "1.json"), "utf8")) as {
-    metadata: { output_mode: string; ranked_list_depth: number };
+    metadata: { output_mode: string; ranked_list_depth: number; ranked_list_count: number };
     ranked_docids: string[];
     ranked_list_parse_error?: string;
+    ranked_list_count_error?: string;
   };
   assert.equal(run.metadata.output_mode, "ranked_list");
-  assert.equal(run.metadata.ranked_list_depth, 2);
-  assert.deepEqual(run.ranked_docids, ["d2", "d1"]);
+  assert.equal(run.metadata.ranked_list_depth, 10);
+  assert.equal(run.metadata.ranked_list_count, 3);
+  assert.deepEqual(run.ranked_docids, ["d2", "d1", "d3"]);
   assert.equal(run.ranked_list_parse_error, undefined);
+  assert.equal(run.ranked_list_count_error, undefined);
   assert.equal(
     readFileSync(join(outputDir, "ranked_list.trec"), "utf8"),
-    "1 Q0 d2 1 2 pi-agent\n1 Q0 d1 2 1 pi-agent\n",
+    "1 Q0 d2 1 3 pi-agent\n1 Q0 d1 2 2 pi-agent\n1 Q0 d3 3 1 pi-agent\n",
   );
 });
 
