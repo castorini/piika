@@ -71,10 +71,11 @@ function extractJsonDocids(text: string): string[] | null {
 }
 
 export function parseRankedDocidsFromAssistantText(text: string): RankedListParseResult {
-  const fromJson = extractJsonDocids(text);
+  const rankedSection = text.match(/(?:^|\n)Ranked List:\s*\n([\s\S]*)$/iu)?.[1] ?? text;
+  const fromJson = extractJsonDocids(rankedSection);
   const rawDocids =
     fromJson ??
-    text
+    rankedSection
       .split(/\r?\n/)
       .map(extractDocidFromRankedLine)
       .filter((docid): docid is string => Boolean(docid));

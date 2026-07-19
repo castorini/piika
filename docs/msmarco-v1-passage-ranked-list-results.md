@@ -74,3 +74,129 @@ rechecked when updating this note.
 
 The locally generated depth-1,000 BM25 runs reproduce all eight BM25 values in the table
 exactly. Their summaries are under `evals/retrieval/msmarco-v1-passage/data/`.
+
+## Exact-count ablation on DL19
+
+### Motivation
+
+`RANKED_LIST_DEPTH` and `RANKED_LIST_COUNT` have deliberately different semantics:
+
+- `RANKED_LIST_DEPTH` is a maximum output depth. When count is omitted, the agent decides how
+  many unique documents it has enough evidence to rank.
+- `RANKED_LIST_COUNT` is an exact requirement. It changes the prompt, validates the returned
+  length, truncates overlong output, and records an error for short output.
+
+The exact-count option was introduced while answer and ranked-list outputs were being made
+atomic and composable. DL19 was used to test whether requiring exactly 10 documents was only a
+serialization constraint or whether it also changed the agent's retrieval policy. It changed the
+retrieval policy substantially.
+
+### Controlled conditions
+
+All corrected-prompt ablations used the same conditions except for output mode and exact count:
+
+- 43 judged TREC DL 2019 passage topics;
+- `openai-codex/gpt-5.5`, thinking level `medium`;
+- prompt variant `plain_minimal`;
+- four shards and a 900-second per-query timeout;
+- Pyserini REST index `msmarco-v1-passage`;
+- the direct `pyserini-rest-2tool` interface (`search` and `read_document`);
+- BM25 defaults k1=0.9 and b=0.4;
+- `trec_eval -c -l 2 -m map`, `trec_eval -c -m ndcg_cut.10`, and
+  `trec_eval -c -l 2 -m recall.1000`.
+
+The optional-count run set `RANKED_LIST_DEPTH=1000` and omitted `RANKED_LIST_COUNT`. The
+exact-10 runs set both depth and count to 10. Because the agent produces only the documents it
+selects, `recall.1000` means recall at the available run depth; it is not depth-matched across
+these conditions.
+
+### Results
+
+| Prompt / output condition                     | Exact count |         AP |    nDCG@10 |       R@1K | Returned depth                                        |
+| --------------------------------------------- | ----------: | ---------: | ---------: | ---------: | ----------------------------------------------------- |
+| Historical ranked-list-only                   |     omitted |     0.3780 |     0.7381 |     0.4811 | min 3, median 25, mean 27.47, max 60; 1,181 total     |
+| Pre-fix ranked-list-only                      |          10 |     0.2280 |     0.7148 |     0.2768 | exactly 10; 430 total                                 |
+| Pre-fix answer + ranked list                  |          10 |     0.2289 |     0.6910 |     0.2636 | exactly 10; 430 total                                 |
+| Corrected ranked-list-only                    |          10 |     0.2211 |     0.6946 |     0.2608 | exactly 10; 430 total                                 |
+| Corrected answer + ranked list                |          10 |     0.2474 |     0.7044 |     0.2765 | exactly 10; 430 total                                 |
+| **Corrected ranked-list-only, count omitted** | **omitted** | **0.3538** | **0.7343** | **0.4339** | **min 3, median 18, mean 23.86, max 73; 1,026 total** |
+
+The key controlled comparison is corrected ranked-list-only with count omitted versus corrected
+ranked-list-only at exactly 10. Omitting count improved aggregate nDCG@10 by **0.0397**, from
+0.6946 to 0.7343. It also nearly reproduced the historical optional-count result of 0.7381; the
+aggregate difference was only -0.0038.
+
+The optional-count ranking lengths were:
+
+```text
+3, 3, 3, 3, 5, 6, 10, 10, 10, 10, 12, 12, 12, 13, 14, 15, 15, 16,
+17, 17, 18, 18, 20, 20, 20, 20, 22, 24, 25, 27, 34, 37, 38, 39, 40,
+40, 46, 49, 49, 49, 51, 61, 73
+```
+
+All 43 optional-count lists contained unique document IDs. There were no parse, count, timeout,
+or completion errors.
+
+### Paired topic-level analysis
+
+Paired comparisons used per-topic nDCG@10, a 100,000-sample topic bootstrap for the mean
+difference confidence interval, and a 200,000-sample paired randomization test with random sign
+flips. Positive deltas favor the first condition named.
+
+| Comparison                                      | Mean delta | Wins / losses / ties |  Bootstrap 95% CI | Two-sided p |
+| ----------------------------------------------- | ---------: | -------------------: | ----------------: | ----------: |
+| Corrected optional count vs corrected exact-10  |    +0.0397 |          24 / 15 / 4 | [-0.0172, 0.1058] |       0.234 |
+| Corrected composed exact-10 vs ranked exact-10  |    +0.0098 |          21 / 20 / 2 | [-0.0507, 0.0782] |       0.790 |
+| Corrected exact-10 vs pre-fix exact-10          |    -0.0202 |          18 / 22 / 3 | [-0.0729, 0.0296] |       0.464 |
+| Corrected optional count vs historical optional |    -0.0038 |          19 / 18 / 6 | [-0.0589, 0.0534] |       0.897 |
+
+None of these single-run paired differences is statistically significant on 43 topics. The
+evidence should therefore be read as an ablation pattern, not as proof of a 0.0397 population
+effect. The important observations are that both optional-count runs independently reached about
+0.74 nDCG@10, both corrected exact-10 runs remained near 0.70, and composing answer with ranked
+list did not cause a consistent loss under the matched corrected prompt.
+
+### Behavioral evidence and interpretation
+
+The corrected optional-count agent did more retrieval work than corrected exact-10 ranked-list
+only:
+
+| Condition               | Tool calls | Search calls | Document reads | Sum elapsed seconds |
+| ----------------------- | ---------: | -----------: | -------------: | ------------------: |
+| Corrected exact-10      |        501 |          180 |            321 |             1,434.3 |
+| Corrected count omitted |        628 |          202 |            426 |             1,697.5 |
+
+The optional-count run used 25% more tool calls, 12% more searches, and 33% more document reads.
+Its system-surfaced macro recall was 0.5283, compared with the shallower exact-10 behavior. This
+supports the following mechanism: when asked for exactly 10 documents, the model can satisfy the
+task as soon as it has ten plausible candidates; when allowed to choose the output length, it
+continues gathering alternatives and then constructs a better-considered top ten. The effect is
+therefore upstream of TREC serialization. Truncating a deep, already-produced ranking to 10 would
+leave nDCG@10 unchanged, whereas prompting the agent to produce exactly 10 changes how it searches.
+
+Other explanations remain possible. These are stochastic agent runs, the prompt wording differs
+between exact and optional conditions, and the optional condition permits more output tokens. A
+larger repeated-run study would be required to separate stopping behavior, candidate-set breadth,
+and token-budget effects.
+
+### Recommendation
+
+- Keep `RANKED_LIST_COUNT` optional in APIs, environment variables, and CLI launchers.
+- Use omitted count as the default agent-retrieval condition; `RANKED_LIST_DEPTH` remains a safety
+  maximum rather than a target.
+- Treat exact count as a substantive retrieval ablation and label it in run names and metadata.
+- If a downstream consumer needs exactly 10 documents without changing agent behavior, first run
+  the optional-count condition and deterministically truncate the produced TREC ranking to 10.
+- Compare answer + ranked list against ranked-list-only under the same count policy. The matched
+  corrected exact-10 comparison provides no evidence that modular output composition itself harms
+  nDCG@10.
+
+### Run artifacts
+
+- Corrected exact-10 ranked-list-only:
+  `runs/msmarco-v1-passage-dl19-judged-ranked-top10-corrected-gpt55-pyserini-rest-2tool/merged`
+- Corrected exact-10 answer + ranked list:
+  `runs/msmarco-v1-passage-dl19-judged-answer-ranked-top10-corrected-gpt55-pyserini-rest-2tool/merged`
+- Corrected optional-count ranked-list-only:
+  `runs/msmarco-v1-passage-dl19-judged-ranked-optional-corrected-gpt55-pyserini-rest-2tool/merged`
+- Evaluation summaries mirror those paths under `evals/retrieval/msmarco-v1-passage/`.

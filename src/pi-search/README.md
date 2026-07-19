@@ -66,11 +66,14 @@ Main export:
 
 - `registerPiSearchExtension(...)`
 
-This file registers the user-facing tools:
+By default this file registers the direct two-tool interface:
 
 - `search`
-- `read_search_results`
 - `read_document`
+
+The `pi-serini-3tool` interface is an explicit opt-in and additionally registers
+`read_search_results` for cached ranking pagination. Prompt generation receives the resolved
+interface so it never instructs the agent to call a tool that is not registered.
 
 It accepts injected backend creation rather than constructing repo-local transport/process details itself.
 

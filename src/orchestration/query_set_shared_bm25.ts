@@ -26,6 +26,7 @@ type Args = {
   qrelsPath?: string;
   indexPath?: string;
   outputMode?: string;
+  toolInterface?: string;
   rankedListDepth?: number;
   rankedListCount?: number;
   dryRun: boolean;
@@ -100,6 +101,12 @@ function parseArgs(argv: string[]): Args {
         args.outputMode = next;
         index += 1;
         break;
+      case "--toolInterface":
+      case "--tool-interface":
+        if (!next) throw new Error(`${arg} requires a value`);
+        args.toolInterface = next;
+        index += 1;
+        break;
       case "--rankedListDepth":
       case "--ranked-list-depth":
         if (!next) throw new Error(`${arg} requires a value`);
@@ -150,7 +157,8 @@ Options:
   --query-file <path>            Explicit override; wins over benchmark defaults
   --qrels <path>                 Explicit override; wins over benchmark defaults
   --index-path <path>            Explicit override; wins over benchmark defaults
-  --output-mode <answer|ranked_list>
+  --output-mode <answer|ranked_list|answer+ranked_list>
+  --tool-interface <pyserini-rest-2tool|pi-serini-3tool>
   --ranked-list-depth <n>        Max requested ranked-list length (default: 1000)
   --ranked-list-count <n>        Require exactly this many ranked docids
   --dry-run
@@ -166,6 +174,7 @@ function resolveSharedLaunchPlan(args: Args): SharedLaunchPlan {
     qrelsPath: args.qrelsPath,
     indexPath: args.indexPath,
     outputMode: args.outputMode,
+    toolInterface: args.toolInterface,
     rankedListDepth: args.rankedListDepth,
     rankedListCount: args.rankedListCount,
   });

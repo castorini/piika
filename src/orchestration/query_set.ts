@@ -58,6 +58,12 @@ function parseArgs(argv: string[]): Args {
         args.outputMode = next;
         index += 1;
         break;
+      case "--toolInterface":
+      case "--tool-interface":
+        if (!next) throw new Error(`${arg} requires a value`);
+        args.toolInterface = next;
+        index += 1;
+        break;
       case "--rankedListDepth":
       case "--ranked-list-depth":
         if (!next) throw new Error(`${arg} requires a value`);
@@ -148,7 +154,8 @@ Options:
   --query-set <id>               Query set id for the selected benchmark (default: benchmark default query set)
   --model <model>
   --prompt-variant <variant>
-  --output-mode <answer|ranked_list>
+  --output-mode <answer|ranked_list|answer+ranked_list>
+  --tool-interface <pyserini-rest-2tool|pi-serini-3tool>
   --ranked-list-depth <n>        Max requested ranked-list length (default: 1000)
   --ranked-list-count <n>        Require exactly this many ranked docids
   --output-dir <dir>

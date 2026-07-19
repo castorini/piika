@@ -251,6 +251,23 @@ void test("registerPiSearchExtension exposes a two-tool prompt surface for pyser
   assert.match(tools[1].promptSnippet ?? "", /fetch the full document by docid/);
 });
 
+void test("registerPiSearchExtension defaults to the direct two-tool surface", () => {
+  const tools: Array<{ name: string }> = [];
+  const pi = {
+    on: () => {},
+    registerTool: (tool: { name: string }) => tools.push(tool),
+  };
+
+  registerPiSearchExtension(pi as never, {
+    resolveConfig: () => buildMockExtensionConfig({ documents: [] }),
+  });
+
+  assert.deepEqual(
+    tools.map((tool) => tool.name),
+    ["search", "read_document"],
+  );
+});
+
 void test("registerPiSearchExtension exposes paginated read_document when pyserini-rest readMode is paginated", () => {
   const tools: Array<{
     name: string;

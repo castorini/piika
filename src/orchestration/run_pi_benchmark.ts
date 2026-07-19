@@ -24,11 +24,18 @@ import {
 import { startBm25ServerTcp } from "../search-providers/anserini/bm25_server_process";
 import { prepareIsolatedAgentDir } from "../runtime/pi_agent_dir";
 import {
+  formatPiSearchOutputModes,
   formatPiSearchPrompt,
-  type PiSearchOutputMode,
+  hasPiSearchOutputMode,
+  parsePiSearchOutputModes,
+  type PiSearchOutputModes,
   type PiSearchPromptVariant,
 } from "../pi-search/agent_prompt";
 import type { PiSearchToolInterface } from "../pi-search/extension";
+import {
+  DEFAULT_PI_SEARCH_TOOL_INTERFACE,
+  parsePiSearchToolInterface,
+} from "../pi-search/tool_interface";
 import { resolveGitCommitProvenance } from "../runtime/git";
 import { startPiJsonProcess, startPiProcessTimeout } from "../runtime/pi_process";
 import { parsePiEventJsonLine, type PiEvent } from "../runtime/pi_json_protocol";
@@ -55,7 +62,8 @@ type BenchmarkRun = {
     output_dir: string;
     query: string;
     prompt_variant: PiSearchPromptVariant;
-    output_mode: PiSearchOutputMode;
+    output_mode: string;
+    output_modes: PiSearchOutputModes;
     ranked_list_depth?: number;
     ranked_list_count?: number;
     tool_interface?: PiSearchToolInterface;
@@ -119,6 +127,7 @@ type PersistedRunSetup = {
   toolInterface?: string;
   searchBackendKind?: string;
   outputMode?: string;
+  outputModes?: string[];
   rankedListDepth?: string;
   rankedListCount?: string;
 };
@@ -273,27 +282,7 @@ async function getSearchBackendConnection(cwd: string): Promise<SearchBackendCon
   };
 }
 
-function parseToolInterface(value: string | undefined): PiSearchToolInterface {
-  const raw = value?.trim() || "pi-serini-3tool";
-  if (raw === "pi-serini-3tool" || raw === "pyserini-rest-2tool") {
-    return raw;
-  }
-  throw new Error(
-    `Invalid tool interface ${raw}. Expected pi-serini-3tool or pyserini-rest-2tool.`,
-  );
-}
-
 const PROMPT_VARIANTS: PiSearchPromptVariant[] = ["plain_minimal"];
-const OUTPUT_MODES: PiSearchOutputMode[] = ["answer", "ranked_list"];
-
-function parseOutputMode(value: string | undefined): PiSearchOutputMode {
-  const raw = value?.trim() || "answer";
-  if (OUTPUT_MODES.includes(raw as PiSearchOutputMode)) {
-    return raw as PiSearchOutputMode;
-  }
-  throw new Error(`Invalid --outputMode ${raw}. Expected one of: ${OUTPUT_MODES.join(", ")}`);
-}
-
 function parsePositiveInteger(value: string | undefined, label: string, fallback: number): number {
   const raw = value?.trim();
   if (!raw) return fallback;
@@ -314,7 +303,7 @@ function parseArgs(argv: string[]) {
     pi: "pi",
     limit: "0",
     timeoutSeconds: "900",
-    toolInterface: process.env.PI_SEARCH_TOOL_INTERFACE?.trim() || "pi-serini-3tool",
+    toolInterface: process.env.PI_SEARCH_TOOL_INTERFACE?.trim() || DEFAULT_PI_SEARCH_TOOL_INTERFACE,
     outputMode: process.env.OUTPUT_MODE?.trim() || "answer",
     rankedListDepth: process.env.RANKED_LIST_DEPTH?.trim() || String(DEFAULT_RANKED_LIST_DEPTH),
     rankedListCount: process.env.RANKED_LIST_COUNT?.trim() || "",
@@ -373,6 +362,7 @@ function parseArgs(argv: string[]) {
     );
   }
 
+  const outputModes = parsePiSearchOutputModes(out.outputMode);
   return {
     benchmarkId: benchmarkConfig.benchmark.id,
     querySetId: benchmarkConfig.querySetId,
@@ -387,10 +377,11 @@ function parseArgs(argv: string[]) {
     limit: Number.parseInt(out.limit, 10),
     timeoutSeconds: Number.parseInt(out.timeoutSeconds, 10),
     piSearchPromptVariant,
-    outputMode: parseOutputMode(out.outputMode),
+    outputMode: formatPiSearchOutputModes(outputModes),
+    outputModes,
     rankedListDepth,
     rankedListCount,
-    toolInterface: parseToolInterface(out.toolInterface),
+    toolInterface: parsePiSearchToolInterface(out.toolInterface),
   };
 }
 
@@ -414,12 +405,14 @@ function readQueries(tsvPath: string): Array<{ queryId: string; query: string }>
 function formatPrompt(
   query: string,
   variant: PiSearchPromptVariant,
-  outputMode: PiSearchOutputMode,
+  outputModes: PiSearchOutputModes,
+  toolInterface: PiSearchToolInterface,
   rankedListDepth: number,
   rankedListCount?: number,
 ): string {
   return formatPiSearchPrompt(query, variant, {
-    outputMode,
+    outputModes,
+    toolInterface,
     rankedListDepth,
     rankedListCount,
   });
@@ -1001,7 +994,7 @@ function finalizeRun(
   model: string,
   outputDir: string,
   piSearchPromptVariant: PiSearchPromptVariant,
-  outputMode: PiSearchOutputMode,
+  outputModes: PiSearchOutputModes,
   rankedListDepth: number,
   rankedListCount: number | undefined,
   toolInterface: PiSearchToolInterface,
@@ -1045,7 +1038,7 @@ function finalizeRun(
     : [];
   const agentDocids = Array.from(new Set([...state.openedDocids, ...citedDocids]));
   const parsedRankedList =
-    outputMode === "ranked_list" && state.finalAssistantText
+    hasPiSearchOutputMode(outputModes, "ranked_list") && state.finalAssistantText
       ? parseRankedDocidsFromAssistantText(state.finalAssistantText)
       : undefined;
   const outputLimit = rankedListCount ?? rankedListDepth;
@@ -1065,9 +1058,14 @@ function finalizeRun(
       output_dir: outputDir,
       query,
       prompt_variant: piSearchPromptVariant,
-      output_mode: outputMode,
-      ranked_list_depth: outputMode === "ranked_list" ? rankedListDepth : undefined,
-      ranked_list_count: outputMode === "ranked_list" ? rankedListCount : undefined,
+      output_mode: formatPiSearchOutputModes(outputModes),
+      output_modes: outputModes,
+      ranked_list_depth: hasPiSearchOutputMode(outputModes, "ranked_list")
+        ? rankedListDepth
+        : undefined,
+      ranked_list_count: hasPiSearchOutputMode(outputModes, "ranked_list")
+        ? rankedListCount
+        : undefined,
       tool_interface: toolInterface,
       search_backend_kind: searchBackendKind,
     },
@@ -1141,7 +1139,8 @@ function buildPersistedRunSetup(args: {
   indexPath: string;
   toolInterface: PiSearchToolInterface;
   searchBackendKind: string;
-  outputMode: PiSearchOutputMode;
+  outputMode: string;
+  outputModes: PiSearchOutputModes;
   rankedListDepth: number;
   rankedListCount?: number;
 }): PersistedRunSetup {
@@ -1162,9 +1161,12 @@ function buildPersistedRunSetup(args: {
     toolInterface: args.toolInterface,
     searchBackendKind: args.searchBackendKind,
     outputMode: args.outputMode,
-    rankedListDepth: args.outputMode === "ranked_list" ? String(args.rankedListDepth) : undefined,
+    outputModes: [...args.outputModes],
+    rankedListDepth: hasPiSearchOutputMode(args.outputModes, "ranked_list")
+      ? String(args.rankedListDepth)
+      : undefined,
     rankedListCount:
-      args.outputMode === "ranked_list" && args.rankedListCount
+      hasPiSearchOutputMode(args.outputModes, "ranked_list") && args.rankedListCount
         ? String(args.rankedListCount)
         : undefined,
   };
@@ -1208,7 +1210,7 @@ async function main() {
   console.log(`Using timeoutSeconds=${args.timeoutSeconds}`);
   console.log(`Using promptVariant=${args.piSearchPromptVariant}`);
   console.log(`Using outputMode=${args.outputMode}`);
-  if (args.outputMode === "ranked_list") {
+  if (hasPiSearchOutputMode(args.outputModes, "ranked_list")) {
     console.log(`Using rankedListDepth=${args.rankedListDepth}`);
     if (args.rankedListCount) {
       console.log(`Using rankedListCount=${args.rankedListCount}`);
@@ -1239,6 +1241,7 @@ async function main() {
         toolInterface: args.toolInterface,
         searchBackendKind,
         outputMode: args.outputMode,
+        outputModes: args.outputModes,
         rankedListDepth: args.rankedListDepth,
         rankedListCount: args.rankedListCount,
       }),
@@ -1261,8 +1264,12 @@ async function main() {
       querySetId: args.querySetId,
       promptVariant: args.piSearchPromptVariant,
       outputMode: args.outputMode,
-      rankedListDepth: args.outputMode === "ranked_list" ? args.rankedListDepth : undefined,
-      rankedListCount: args.outputMode === "ranked_list" ? args.rankedListCount : undefined,
+      rankedListDepth: hasPiSearchOutputMode(args.outputModes, "ranked_list")
+        ? args.rankedListDepth
+        : undefined,
+      rankedListCount: hasPiSearchOutputMode(args.outputModes, "ranked_list")
+        ? args.rankedListCount
+        : undefined,
       toolInterface: args.toolInterface,
       searchBackendKind,
       timeoutSeconds: args.timeoutSeconds,
@@ -1335,7 +1342,8 @@ async function main() {
           prompt: formatPrompt(
             query,
             args.piSearchPromptVariant,
-            args.outputMode,
+            args.outputModes,
+            args.toolInterface,
             args.rankedListDepth,
             args.rankedListCount,
           ),
@@ -1358,7 +1366,7 @@ async function main() {
           args.model,
           args.outputDir,
           args.piSearchPromptVariant,
-          args.outputMode,
+          args.outputModes,
           args.rankedListDepth,
           args.rankedListCount,
           args.toolInterface,
@@ -1387,7 +1395,7 @@ async function main() {
             args.model,
             args.outputDir,
             args.piSearchPromptVariant,
-            args.outputMode,
+            args.outputModes,
             args.rankedListDepth,
             args.rankedListCount,
             args.toolInterface,
@@ -1408,7 +1416,7 @@ async function main() {
             args.model,
             args.outputDir,
             args.piSearchPromptVariant,
-            args.outputMode,
+            args.outputModes,
             args.rankedListDepth,
             args.rankedListCount,
             args.toolInterface,
@@ -1451,7 +1459,7 @@ async function main() {
   }
 
   const finalRunning = formatRunningRecall(runningRecall);
-  if (args.outputMode === "ranked_list") {
+  if (hasPiSearchOutputMode(args.outputModes, "ranked_list")) {
     const trecRun = writeRankedListTrecRunFile({ runDir: args.outputDir });
     console.log(
       `Wrote ranked-list TREC run file ${trecRun.outputPath} queries=${trecRun.queryCount} lines=${trecRun.lineCount}`,

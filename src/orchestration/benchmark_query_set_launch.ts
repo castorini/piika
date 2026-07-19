@@ -5,8 +5,18 @@ import {
 } from "../benchmarks/registry";
 import { DEFAULT_RANKED_LIST_DEPTH } from "../evaluation/ranked_list_output";
 import { buildPyseriniRestExtensionConfig } from "../pi-search/config";
-import type { PiSearchOutputMode } from "../pi-search/agent_prompt";
+import {
+  formatPiSearchOutputModes,
+  hasPiSearchOutputMode,
+  parsePiSearchOutputModes,
+  type PiSearchOutputModes,
+} from "../pi-search/agent_prompt";
 import { buildTsxCommand } from "../runtime/tsx";
+import {
+  DEFAULT_PI_SEARCH_TOOL_INTERFACE,
+  parsePiSearchToolInterface,
+  type PiSearchToolInterface,
+} from "../pi-search/tool_interface";
 
 export type BenchmarkQuerySetLaunchArgs = {
   benchmarkId?: string;
@@ -22,6 +32,7 @@ export type BenchmarkQuerySetLaunchArgs = {
   qrelsPath?: string;
   indexPath?: string;
   outputMode?: string;
+  toolInterface?: string;
   rankedListDepth?: number;
   rankedListCount?: number;
 };
@@ -39,7 +50,9 @@ export type BenchmarkQuerySetLaunchPlan = {
   queryPath: string;
   qrelsPath: string;
   indexPath: string;
-  outputMode: PiSearchOutputMode;
+  outputMode: string;
+  outputModes: PiSearchOutputModes;
+  toolInterface: PiSearchToolInterface;
   rankedListDepth: number;
   rankedListCount?: number;
 };
@@ -71,12 +84,6 @@ function parsePyseriniRestReadMode(value: string | undefined): "full" | "paginat
   if (!value) return undefined;
   if (value === "full" || value === "paginated") return value;
   throw new Error(`PYSERINI_REST_READ_MODE must be "full" or "paginated"; received ${value}`);
-}
-
-function parseOutputMode(value: string | undefined): PiSearchOutputMode {
-  if (!value) return "answer";
-  if (value === "answer" || value === "ranked_list") return value;
-  throw new Error(`OUTPUT_MODE must be "answer" or "ranked_list"; received ${value}`);
 }
 
 function buildPyseriniRestEnvShortcut(baseEnv: NodeJS.ProcessEnv): Record<string, string> {
@@ -111,7 +118,7 @@ function buildPyseriniRestEnvShortcut(baseEnv: NodeJS.ProcessEnv): Record<string
   return {
     PI_SEARCH_EXTENSION_CONFIG: JSON.stringify(config),
     PI_SEARCH_TOOL_INTERFACE:
-      readEnvFrom(baseEnv, "PI_SEARCH_TOOL_INTERFACE") ?? "pyserini-rest-2tool",
+      readEnvFrom(baseEnv, "PI_SEARCH_TOOL_INTERFACE") ?? DEFAULT_PI_SEARCH_TOOL_INTERFACE,
   };
 }
 
@@ -150,6 +157,10 @@ export function resolveBenchmarkQuerySetLaunchPlan(
       `RANKED_LIST_COUNT (${rankedListCount}) cannot exceed RANKED_LIST_DEPTH (${rankedListDepth})`,
     );
   }
+  const outputModes = parsePiSearchOutputModes(args.outputMode ?? readEnv("OUTPUT_MODE"));
+  const toolInterface = parsePiSearchToolInterface(
+    args.toolInterface ?? readEnv("PI_SEARCH_TOOL_INTERFACE") ?? DEFAULT_PI_SEARCH_TOOL_INTERFACE,
+  );
 
   return {
     benchmarkId: benchmark.id,
@@ -171,7 +182,9 @@ export function resolveBenchmarkQuerySetLaunchPlan(
     queryPath: config.queryPath,
     qrelsPath: config.qrelsPath,
     indexPath: config.indexPath,
-    outputMode: parseOutputMode(args.outputMode ?? readEnv("OUTPUT_MODE")),
+    outputMode: formatPiSearchOutputModes(outputModes),
+    outputModes,
+    toolInterface,
     rankedListDepth,
     rankedListCount,
   };
@@ -197,6 +210,7 @@ export function buildBenchmarkQuerySetLaunchEnv(
     EXTENSION: plan.extensionPath,
     PI_BM25_INDEX_PATH: plan.indexPath,
     PROMPT_VARIANT: plan.piSearchPromptVariant,
+    PI_SEARCH_TOOL_INTERFACE: plan.toolInterface,
     OUTPUT_MODE: plan.outputMode,
     RANKED_LIST_DEPTH: String(plan.rankedListDepth),
     RANKED_LIST_COUNT: plan.rankedListCount ? String(plan.rankedListCount) : undefined,
@@ -240,7 +254,8 @@ export function printBenchmarkQuerySetLaunchPlan(plan: BenchmarkQuerySetLaunchPl
   console.log(`QUERY_SET=${plan.querySetId}`);
   console.log(`PROMPT_VARIANT=${plan.piSearchPromptVariant}`);
   console.log(`OUTPUT_MODE=${plan.outputMode}`);
-  if (plan.outputMode === "ranked_list") {
+  console.log(`PI_SEARCH_TOOL_INTERFACE=${plan.toolInterface}`);
+  if (hasPiSearchOutputMode(plan.outputModes, "ranked_list")) {
     console.log(`RANKED_LIST_DEPTH=${plan.rankedListDepth}`);
     if (plan.rankedListCount) {
       console.log(`RANKED_LIST_COUNT=${plan.rankedListCount}`);
