@@ -34,6 +34,7 @@ The first CLI release supports:
 
 ```bash
 piika benchmarks
+piika prebuilt <indexes|topics|qrels|setup> [options]
 piika setup <benchmark> [options]
 piika run [--mode single|shared|sharded] [options]
 piika run --preset <preset> [options]
@@ -60,6 +61,59 @@ This is the CLI equivalent of:
 ```bash
 npm run bench -- benchmarks
 ```
+
+## Castorini prebuilt indexes, topics, and qrels
+
+The prebuilt catalog is loaded at runtime from `castorini/prebuilt-indexes` and
+`castorini/anserini-tools`, so a newly published upstream asset does not require a piika release or
+another hard-coded benchmark definition.
+
+Search the three catalogs with an optional case-insensitive filter:
+
+```bash
+piika prebuilt indexes msmarco
+piika prebuilt topics dl19
+piika prebuilt qrels dl19
+```
+
+Install a compatible index/topic/qrels combination:
+
+```bash
+piika prebuilt setup msmarco-v1-passage --topics dl19-passage --dry-run
+piika prebuilt setup msmarco-v1-passage --topics dl19-passage
+piika prebuilt setup msmarco-v2-passage --topics dl21 --qrels dl21-passage
+```
+
+The setup command resolves qrels by topic ID and the official qrels aliases. Override that choice
+when necessary:
+
+```bash
+piika prebuilt setup <index-id> --topics <topics-id> --qrels <qrels-id>
+```
+
+After setup, the command prints the generated benchmark ID. It is also shown by `piika benchmarks`
+and works with the normal single, shared, and sharded runners:
+
+```bash
+piika run --benchmark prebuilt-msmarco-v1-passage-dl19-passage
+```
+
+Downloaded files are kept in the workspace's normal ignored asset locations: archives under
+`vendor/downloads/`, indexes under `indexes/`, and installed manifests plus normalized queries and
+qrels under `data/prebuilt/`. Piika verifies the index archive against the MD5 published in the
+upstream catalog before extraction. Downloads are written atomically, and index mirrors are tried
+in catalog order until one downloads with the expected checksum. Existing verified archives and
+extracted indexes are reused.
+
+Catalog discovery requires access to the GitHub API and the raw files in `castorini/anserini-tools`.
+Setup currently accepts Lucene catalog entries with type `inverted`. Topics using Anserini's TSV,
+JSON/JSONL, DPR JSON, and classic TREC readers are normalized to piika's two-column TSV format;
+other specialized reader classes fail with an actionable compatibility error.
+
+Each successful setup writes `data/prebuilt/<benchmark-id>/benchmark.json`. These installed
+manifests are loaded dynamically by `piika benchmarks`, `piika run`, evaluation, and reporting, so
+adding an upstream index or query set does not require a source-code change. Set
+`PIIKA_BENCHMARKS_DIR` to use a different installed-manifest directory.
 
 ## Setup
 

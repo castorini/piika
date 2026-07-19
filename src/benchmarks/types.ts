@@ -82,6 +82,18 @@ export type BenchmarkDefinition = {
   setup: BenchmarkSetupDefinition;
   retrievalEvaluation: BenchmarkRetrievalEvaluationDefinition;
   judgeEvaluation?: BenchmarkJudgeEvaluationDefinition;
+  source?: BenchmarkSourceDefinition;
+};
+
+export type BenchmarkSourceDefinition = {
+  kind: "castorini-prebuilt";
+  indexId: string;
+  indexUrl: string;
+  indexMd5: string;
+  topicsId: string;
+  topicsUrl: string;
+  qrelsId: string;
+  qrelsUrl: string;
 };
 
 export type ResolvedBenchmarkConfig = {
@@ -123,6 +135,7 @@ export type BenchmarkManifestSnapshot = {
   secondary_qrels_path?: string;
   ground_truth_path?: string;
   index_path: string;
+  source?: BenchmarkSourceDefinition;
   input_hashes?: BenchmarkManifestInputHashes;
   git_commit?: string;
   git_commit_short?: string;

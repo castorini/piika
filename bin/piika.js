@@ -7,12 +7,14 @@ import { fileURLToPath } from "node:url";
 const require = createRequire(import.meta.url);
 const packageJson = require("../package.json");
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const invocationCwd = process.cwd();
 
 function printHelp() {
   console.log(`piika ${packageJson.version}
 
 Usage:
   piika benchmarks
+  piika prebuilt <indexes|topics|qrels|setup> [options]
   piika setup <benchmark> [options]
   piika run [--mode single|shared|sharded] [options]
   piika run --preset <preset> [options]
@@ -25,6 +27,8 @@ Usage:
 
 Examples:
   piika benchmarks
+  piika prebuilt indexes msmarco
+  piika prebuilt setup msmarco-v1-passage --topics dl19-passage
   piika setup benchmark-template --dry-run
   piika run --benchmark benchmark-template --query-set test --dry-run
   piika run --mode sharded --benchmark browsecomp-plus --query-set q100 --shards 4
@@ -74,6 +78,9 @@ function buildEnv(overrides = {}) {
   );
   return {
     ...process.env,
+    PIIKA_WORKSPACE_ROOT: process.env.PIIKA_WORKSPACE_ROOT || invocationCwd,
+    PIIKA_BENCHMARKS_DIR:
+      process.env.PIIKA_BENCHMARKS_DIR || resolve(invocationCwd, "data", "prebuilt"),
     ...overrides,
     PATH: pathEntries.join(":"),
   };
@@ -254,6 +261,7 @@ if (command === "--version" || command === "-v") {
   process.exit(0);
 }
 if (command === "benchmarks") runBenchctl("benchmarks", args);
+if (command === "prebuilt") runTs("src/prebuilt/entry.ts", args);
 if (command === "status") runBenchctl("status", args);
 if (command === "tui") runBenchctl("tui", args);
 if (command === "setup") runSetup(args);

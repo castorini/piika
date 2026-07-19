@@ -65,9 +65,35 @@ If Java is installed in a non-standard location, set `JAVA_HOME` explicitly befo
 Pi packages now live under the `@earendil-works/*` npm namespace. This repo depends on `@earendil-works/pi-coding-agent` and `@earendil-works/pi-tui`; use that namespace for any local extension or SDK imports rather than the retired `@mariozechner/*` package names.
 
 Model note: `gpt-5.3-codex` was used for some historical judge runs, but OpenAI's Codex model documentation now lists it as deprecated when signing in with ChatGPT. Use the current recommended Codex models for new subscription-backed runs, and label any replacement judge model explicitly in reports.
-- 2026-06-26: Default judge model updated to gpt-5.5. 
+
+- 2026-06-26: Default judge model updated to gpt-5.5.
 
 ## Quickstart
+
+### Use Castorini prebuilt assets
+
+Piika reads the live Castorini catalogs instead of keeping a handwritten list of indexes, topics,
+and qrels. Search them, then install any compatible combination:
+
+```bash
+piika prebuilt indexes msmarco-v1-passage
+piika prebuilt topics dl19
+piika prebuilt qrels dl19
+piika prebuilt setup msmarco-v1-passage --topics dl19-passage
+piika prebuilt setup msmarco-v2-passage --topics dl21 --qrels dl21-passage
+piika run --benchmark prebuilt-msmarco-v1-passage-dl19-passage
+```
+
+`prebuilt setup` downloads and verifies the selected index, downloads the official Anserini topics
+and qrels, normalizes supported topic formats into piika's TSV query format, and writes an installed
+benchmark manifest under `data/prebuilt/`. Installed manifests are discovered automatically by all
+normal benchmark commands. Use `--qrels <id>` when the desired qrels do not share the topic ID or
+one of its upstream aliases, and `--dry-run` to inspect paths and URLs without downloading assets.
+
+The local BM25 backend accepts upstream catalog entries with type `inverted`. TSV, JSONL, and
+classic TREC topic readers are normalized directly; piika reports a clear error for specialized
+Anserini topic readers that do not yet have a lossless converter. Index downloads are atomic,
+checksum-verified, and retried against the mirrors published in the upstream catalog.
 
 ### 1. Set up benchmark assets
 
