@@ -49,7 +49,70 @@ void test("explicit PI_SEARCH_EXTENSION_CONFIG wins over Pyserini REST shorthand
   });
 
   assert.equal(env.PI_SEARCH_EXTENSION_CONFIG, explicitConfig);
-  assert.equal(env.PI_SEARCH_TOOL_INTERFACE, undefined);
+  assert.equal(env.PI_SEARCH_TOOL_INTERFACE, "pyserini-rest-2tool");
+});
+
+void test("benchmark query-set launch plan carries ranked-list output mode", () => {
+  const plan = resolveBenchmarkQuerySetLaunchPlan({
+    benchmarkId: "benchmark-template",
+    querySetId: "test",
+    outputMode: "ranked_list",
+    rankedListDepth: 25,
+    rankedListCount: 20,
+  });
+  const env = buildBenchmarkQuerySetLaunchEnv(plan, {});
+
+  assert.equal(plan.outputMode, "ranked_list");
+  assert.equal(plan.rankedListDepth, 25);
+  assert.equal(plan.rankedListCount, 20);
+  assert.equal(env.OUTPUT_MODE, "ranked_list");
+  assert.equal(env.RANKED_LIST_DEPTH, "25");
+  assert.equal(env.RANKED_LIST_COUNT, "20");
+});
+
+void test("benchmark launch defaults to the direct two-tool interface", () => {
+  const plan = resolveBenchmarkQuerySetLaunchPlan({ benchmarkId: "benchmark-template" });
+  const env = buildBenchmarkQuerySetLaunchEnv(plan, {});
+
+  assert.equal(plan.toolInterface, "pyserini-rest-2tool");
+  assert.equal(env.PI_SEARCH_TOOL_INTERFACE, "pyserini-rest-2tool");
+});
+
+void test("benchmark launch preserves explicit three-tool opt-in", () => {
+  const plan = resolveBenchmarkQuerySetLaunchPlan({
+    benchmarkId: "benchmark-template",
+    toolInterface: "pi-serini-3tool",
+  });
+
+  assert.equal(plan.toolInterface, "pi-serini-3tool");
+});
+
+void test("ranked-list exact count cannot exceed the configured depth", () => {
+  assert.throws(
+    () =>
+      resolveBenchmarkQuerySetLaunchPlan({
+        benchmarkId: "benchmark-template",
+        querySetId: "test",
+        outputMode: "ranked_list",
+        rankedListDepth: 20,
+        rankedListCount: 30,
+      }),
+    /RANKED_LIST_COUNT \(30\) cannot exceed RANKED_LIST_DEPTH \(20\)/,
+  );
+});
+
+void test("benchmark launch composes answer and ranked-list outputs", () => {
+  const plan = resolveBenchmarkQuerySetLaunchPlan({
+    benchmarkId: "benchmark-template",
+    outputMode: "answer+ranked_list",
+    rankedListDepth: 25,
+  });
+  const env = buildBenchmarkQuerySetLaunchEnv(plan, {});
+
+  assert.equal(plan.outputMode, "answer+ranked_list");
+  assert.deepEqual(plan.outputModes, ["answer", "ranked_list"]);
+  assert.equal(env.OUTPUT_MODE, "answer+ranked_list");
+  assert.equal(env.RANKED_LIST_DEPTH, "25");
 });
 
 void test("benchmark query-set launch plan propagates supplied document bundle", () => {

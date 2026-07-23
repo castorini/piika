@@ -319,9 +319,13 @@ void test("registry renders MSMARCO managed preset paths for shared runs", () =>
   });
 });
 
-void test("registry includes runnable local and external second benchmarks", () => {
+void test("registry includes its packaged benchmarks alongside installed benchmarks", () => {
   const benchmarkIds = listBenchmarks().map((benchmark) => benchmark.id);
-  assert.deepEqual(benchmarkIds, ["browsecomp-plus", "msmarco-v1-passage", "benchmark-template"]);
+  assert.deepEqual(benchmarkIds.slice(0, 3), [
+    "browsecomp-plus",
+    "msmarco-v1-passage",
+    "benchmark-template",
+  ]);
 
   const templateResolved = resolveBenchmarkConfig({
     benchmarkId: "benchmark-template",
@@ -348,6 +352,13 @@ void test("registry includes runnable local and external second benchmarks", () 
     msmarcoDl20Resolved.qrelsPath,
     "data/msmarco-v1-passage/qrels/qrels.dl20-passage.txt",
   );
+
+  const msmarcoDevResolved = resolveBenchmarkConfig({
+    benchmarkId: "msmarco-v1-passage",
+    querySetId: "dev",
+  });
+  assert.equal(msmarcoDevResolved.queryPath, "data/msmarco-v1-passage/queries/dev.tsv");
+  assert.equal(msmarcoDevResolved.qrelsPath, "data/msmarco-v1-passage/qrels/qrels.dev-passage.txt");
 });
 
 void test("registry resolves benchmark-specific internal retrieval semantics", () => {

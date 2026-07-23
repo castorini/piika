@@ -51,6 +51,15 @@ fetch_file() {
   exit 1
 }
 
+run_hf() {
+  if command -v hf >/dev/null 2>&1; then
+    hf "$@"
+    return
+  fi
+  ensure_command uv 'Install uv from https://docs.astral.sh/uv/getting-started/installation/'
+  uvx --from 'huggingface_hub[cli]' hf "$@"
+}
+
 main() {
   cd "$ROOT"
   ensure_command uv 'Install uv from https://docs.astral.sh/uv/getting-started/installation/'
@@ -68,45 +77,45 @@ main() {
   log "Downloading qrels from $QRELS_URL"
   fetch_file "$QRELS_URL" "$DST_QRELS"
 
-  log "Refreshing BM25 index from Hugging Face dataset $INDEX_REPO ($INDEX_INCLUDE)"
-  rm -rf "$TMP_INDEX_DOWNLOAD_ROOT" "$DST_INDEX_DIR"
-  uvx --from 'huggingface_hub[cli]' huggingface-cli download \
-    "$INDEX_REPO" \
-    --repo-type dataset \
-    --include "$INDEX_INCLUDE" \
-    --local-dir "$TMP_INDEX_DOWNLOAD_ROOT"
+    log "Refreshing BM25 index from Hugging Face dataset $INDEX_REPO ($INDEX_INCLUDE)"
+    rm -rf "$TMP_INDEX_DOWNLOAD_ROOT" "$DST_INDEX_DIR"
+    run_hf download \
+      "$INDEX_REPO" \
+      --repo-type dataset \
+      --include "$INDEX_INCLUDE" \
+      --local-dir "$TMP_INDEX_DOWNLOAD_ROOT"
 
-  if [[ ! -d "$TMP_INDEX_SOURCE_DIR" ]]; then
-    printf 'Expected downloaded index directory not found: %s\n' "$TMP_INDEX_SOURCE_DIR" >&2
-    exit 1
-  fi
+    if [[ ! -d "$TMP_INDEX_SOURCE_DIR" ]]; then
+      printf 'Expected downloaded index directory not found: %s\n' "$TMP_INDEX_SOURCE_DIR" >&2
+      exit 1
+    fi
 
-  mv "$TMP_INDEX_SOURCE_DIR" "$DST_INDEX_DIR"
-  rm -rf "$TMP_INDEX_DOWNLOAD_ROOT"
-  rm -f "$DST_INDEX_DIR/write.lock"
+    mv "$TMP_INDEX_SOURCE_DIR" "$DST_INDEX_DIR"
+    rm -rf "$TMP_INDEX_DOWNLOAD_ROOT"
+    rm -f "$DST_INDEX_DIR/write.lock"
 
-  log "Downloading Anserini fatjar from $ANSERINI_FATJAR_URL"
-  fetch_file "$ANSERINI_FATJAR_URL" "$DST_ANSERINI_JAR"
+    log "Downloading Anserini fatjar from $ANSERINI_FATJAR_URL"
+    fetch_file "$ANSERINI_FATJAR_URL" "$DST_ANSERINI_JAR"
 
-  log 'Decrypting BrowseComp-Plus ground truth and full query population'
-  bash scripts/benchmarks/browsecomp_plus/setup_ground_truth.sh
+    log 'Decrypting BrowseComp-Plus ground truth and full query population'
+    bash scripts/benchmarks/browsecomp_plus/setup_ground_truth.sh
 
-  log "Copying decrypted full query population to $DST_SOURCE_QUERIES"
-  cp "$DST_ALL_QUERIES" "$DST_SOURCE_QUERIES"
+    log "Copying decrypted full query population to $DST_SOURCE_QUERIES"
+    cp "$DST_ALL_QUERIES" "$DST_SOURCE_QUERIES"
 
-  log "Generating pure BM25 run locally with Anserini SearchCollection"
-  java -cp "$DST_ANSERINI_JAR" \
-    io.anserini.search.SearchCollection \
-    -topicReader TsvString \
-    -topics "$DST_SOURCE_QUERIES" \
-    -index "$DST_INDEX_DIR" \
-    -output "$DST_BM25_RUN" \
-    -bm25 \
-    -hits 1000 \
-    -threads "$ANSERINI_THREADS"
+    log "Generating pure BM25 run locally with Anserini SearchCollection"
+    java -cp "$DST_ANSERINI_JAR" \
+      io.anserini.search.SearchCollection \
+      -topicReader TsvString \
+      -topics "$DST_SOURCE_QUERIES" \
+      -index "$DST_INDEX_DIR" \
+      -output "$DST_BM25_RUN" \
+      -bm25 \
+      -hits 1000 \
+      -threads "$ANSERINI_THREADS"
 
-  log 'Generating q9/q100/q300/qfull slices from code-defined sampling logic'
-  bash scripts/benchmarks/browsecomp_plus/generate_query_slices.sh
+    log 'Generating q9/q100/q300/qfull slices from code-defined sampling logic'
+    bash scripts/benchmarks/browsecomp_plus/generate_query_slices.sh
 
   touch "$ROOT/runs/.gitkeep" "$ROOT/notes/.gitkeep"
 

@@ -3,8 +3,20 @@ import {
   getDefaultBenchmarkId,
   resolveBenchmarkConfig,
 } from "../benchmarks/registry";
+import { DEFAULT_RANKED_LIST_DEPTH } from "../evaluation/ranked_list_output";
 import { buildPyseriniRestExtensionConfig } from "../pi-search/config";
+import {
+  formatPiSearchOutputModes,
+  hasPiSearchOutputMode,
+  parsePiSearchOutputModes,
+  type PiSearchOutputModes,
+} from "../pi-search/agent_prompt";
 import { buildTsxCommand } from "../runtime/tsx";
+import {
+  DEFAULT_PI_SEARCH_TOOL_INTERFACE,
+  parsePiSearchToolInterface,
+  type PiSearchToolInterface,
+} from "../pi-search/tool_interface";
 
 export type BenchmarkQuerySetLaunchArgs = {
   benchmarkId?: string;
@@ -20,6 +32,10 @@ export type BenchmarkQuerySetLaunchArgs = {
   qrelsPath?: string;
   indexPath?: string;
   suppliedDocBundlePath?: string;
+  outputMode?: string;
+  toolInterface?: string;
+  rankedListDepth?: number;
+  rankedListCount?: number;
 };
 
 export type BenchmarkQuerySetLaunchPlan = {
@@ -36,6 +52,11 @@ export type BenchmarkQuerySetLaunchPlan = {
   qrelsPath: string;
   indexPath: string;
   suppliedDocBundlePath?: string;
+  outputMode: string;
+  outputModes: PiSearchOutputModes;
+  toolInterface: PiSearchToolInterface;
+  rankedListDepth: number;
+  rankedListCount?: number;
 };
 
 export function readEnv(name: string): string | undefined {
@@ -99,7 +120,7 @@ function buildPyseriniRestEnvShortcut(baseEnv: NodeJS.ProcessEnv): Record<string
   return {
     PI_SEARCH_EXTENSION_CONFIG: JSON.stringify(config),
     PI_SEARCH_TOOL_INTERFACE:
-      readEnvFrom(baseEnv, "PI_SEARCH_TOOL_INTERFACE") ?? "pyserini-rest-2tool",
+      readEnvFrom(baseEnv, "PI_SEARCH_TOOL_INTERFACE") ?? DEFAULT_PI_SEARCH_TOOL_INTERFACE,
   };
 }
 
@@ -117,6 +138,31 @@ export function resolveBenchmarkQuerySetLaunchPlan(
   });
   const piSearchPromptVariant =
     args.promptVariant ?? readEnv("PROMPT_VARIANT") ?? benchmark.piSearchPromptVariant;
+  const rankedListDepth =
+    args.rankedListDepth ??
+    (readEnv("RANKED_LIST_DEPTH")
+      ? parseInteger(readEnv("RANKED_LIST_DEPTH") as string, "RANKED_LIST_DEPTH")
+      : DEFAULT_RANKED_LIST_DEPTH);
+  if (rankedListDepth <= 0) {
+    throw new Error(`RANKED_LIST_DEPTH must be a positive integer; received ${rankedListDepth}`);
+  }
+  const rankedListCount =
+    args.rankedListCount ??
+    (readEnv("RANKED_LIST_COUNT")
+      ? parseInteger(readEnv("RANKED_LIST_COUNT") as string, "RANKED_LIST_COUNT")
+      : undefined);
+  if (rankedListCount !== undefined && rankedListCount <= 0) {
+    throw new Error(`RANKED_LIST_COUNT must be a positive integer; received ${rankedListCount}`);
+  }
+  if (rankedListCount !== undefined && rankedListCount > rankedListDepth) {
+    throw new Error(
+      `RANKED_LIST_COUNT (${rankedListCount}) cannot exceed RANKED_LIST_DEPTH (${rankedListDepth})`,
+    );
+  }
+  const outputModes = parsePiSearchOutputModes(args.outputMode ?? readEnv("OUTPUT_MODE"));
+  const toolInterface = parsePiSearchToolInterface(
+    args.toolInterface ?? readEnv("PI_SEARCH_TOOL_INTERFACE") ?? DEFAULT_PI_SEARCH_TOOL_INTERFACE,
+  );
 
   return {
     benchmarkId: benchmark.id,
@@ -139,6 +185,11 @@ export function resolveBenchmarkQuerySetLaunchPlan(
     qrelsPath: config.qrelsPath,
     indexPath: config.indexPath,
     suppliedDocBundlePath: args.suppliedDocBundlePath ?? readEnv("SUPPLIED_DOC_BUNDLE"),
+    outputMode: formatPiSearchOutputModes(outputModes),
+    outputModes,
+    toolInterface,
+    rankedListDepth,
+    rankedListCount,
   };
 }
 
@@ -163,6 +214,10 @@ export function buildBenchmarkQuerySetLaunchEnv(
     PI_BM25_INDEX_PATH: plan.indexPath,
     PROMPT_VARIANT: plan.piSearchPromptVariant,
     ...(plan.suppliedDocBundlePath ? { SUPPLIED_DOC_BUNDLE: plan.suppliedDocBundlePath } : {}),
+    PI_SEARCH_TOOL_INTERFACE: plan.toolInterface,
+    OUTPUT_MODE: plan.outputMode,
+    RANKED_LIST_DEPTH: String(plan.rankedListDepth),
+    RANKED_LIST_COUNT: plan.rankedListCount ? String(plan.rankedListCount) : undefined,
   };
 }
 
@@ -190,6 +245,11 @@ export function buildRunPiBenchmarkCommand(plan: BenchmarkQuerySetLaunchPlan): s
     String(plan.timeoutSeconds),
     "--promptVariant",
     plan.piSearchPromptVariant,
+    "--outputMode",
+    plan.outputMode,
+    "--rankedListDepth",
+    String(plan.rankedListDepth),
+    ...(plan.rankedListCount ? ["--rankedListCount", String(plan.rankedListCount)] : []),
   ]);
   if (plan.suppliedDocBundlePath) {
     command.push("--supplied-doc-bundle", plan.suppliedDocBundlePath);
@@ -201,6 +261,14 @@ export function printBenchmarkQuerySetLaunchPlan(plan: BenchmarkQuerySetLaunchPl
   console.log(`BENCHMARK=${plan.benchmarkId}`);
   console.log(`QUERY_SET=${plan.querySetId}`);
   console.log(`PROMPT_VARIANT=${plan.piSearchPromptVariant}`);
+  console.log(`OUTPUT_MODE=${plan.outputMode}`);
+  console.log(`PI_SEARCH_TOOL_INTERFACE=${plan.toolInterface}`);
+  if (hasPiSearchOutputMode(plan.outputModes, "ranked_list")) {
+    console.log(`RANKED_LIST_DEPTH=${plan.rankedListDepth}`);
+    if (plan.rankedListCount) {
+      console.log(`RANKED_LIST_COUNT=${plan.rankedListCount}`);
+    }
+  }
   console.log(`MODEL=${plan.model}`);
   console.log(`QUERY_FILE=${plan.queryPath}`);
   console.log(`QRELS_FILE=${plan.qrelsPath}`);

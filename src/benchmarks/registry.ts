@@ -5,6 +5,7 @@ import { browsecompPlusBenchmark } from "./browsecomp_plus";
 import { msmarcoV1PassageBenchmark } from "./msmarco_v1_passage";
 import { templateBenchmark } from "./template_benchmark";
 import { buildTsxCommand } from "../runtime/tsx";
+import { loadInstalledBenchmarks } from "./installed";
 import {
   BENCHMARK_SETUP_STEPS,
   type BenchmarkDefinition,
@@ -21,11 +22,29 @@ import {
   type ResolvedBenchmarkConfig,
 } from "./types";
 
-const BENCHMARKS: BenchmarkDefinition[] = [
+const BUILTIN_BENCHMARKS: BenchmarkDefinition[] = [
   browsecompPlusBenchmark,
   msmarcoV1PassageBenchmark,
   templateBenchmark,
 ];
+
+function getAllBenchmarks(): BenchmarkDefinition[] {
+  const benchmarks = [...BUILTIN_BENCHMARKS, ...loadInstalledBenchmarks()];
+  const names = new Map<string, string>();
+  for (const benchmark of benchmarks) {
+    for (const name of [benchmark.id, ...benchmark.aliases]) {
+      const normalized = normalizeBenchmarkId(name);
+      const owner = names.get(normalized);
+      if (owner && owner !== benchmark.id) {
+        throw new Error(
+          `Benchmark name or alias ${name} is shared by ${owner} and ${benchmark.id}`,
+        );
+      }
+      names.set(normalized, benchmark.id);
+    }
+  }
+  return benchmarks;
+}
 
 const DEFAULT_INTERNAL_RETRIEVAL_METRICS: Required<BenchmarkInternalRetrievalMetricSemantics> = {
   ndcgGainMode: "exponential",
@@ -41,7 +60,7 @@ function normalizeBenchmarkId(value: string): string {
 }
 
 export function listBenchmarks(): BenchmarkDefinition[] {
-  return [...BENCHMARKS];
+  return getAllBenchmarks();
 }
 
 export type BenchmarkCatalogEntry = {
@@ -63,7 +82,7 @@ export type BenchmarkCatalogEntry = {
 };
 
 export function listBenchmarkCatalog(): BenchmarkCatalogEntry[] {
-  return BENCHMARKS.map((benchmark) => {
+  return getAllBenchmarks().map((benchmark) => {
     const compareConfig = resolveBenchmarkCompareConfig({ benchmarkId: benchmark.id });
     const managedPresetDescriptions = Object.values(benchmark.managedPresets).map(
       (preset) =>
@@ -101,13 +120,14 @@ export function getDefaultBenchmarkId(): string {
 
 export function getBenchmarkDefinition(input = getDefaultBenchmarkId()): BenchmarkDefinition {
   const normalized = normalizeBenchmarkId(input);
-  const benchmark = BENCHMARKS.find((candidate) => {
+  const benchmarks = getAllBenchmarks();
+  const benchmark = benchmarks.find((candidate) => {
     if (candidate.id === normalized) return true;
     return candidate.aliases.some((alias) => normalizeBenchmarkId(alias) === normalized);
   });
   if (!benchmark) {
     throw new Error(
-      `Unknown benchmark: ${input}. Supported benchmarks: ${BENCHMARKS.map((candidate) => candidate.id).join(", ")}`,
+      `Unknown benchmark: ${input}. Supported benchmarks: ${benchmarks.map((candidate) => candidate.id).join(", ")}`,
     );
   }
   return benchmark;
@@ -263,6 +283,7 @@ export function createBenchmarkManifestSnapshot(
     secondary_qrels_path: config.secondaryQrelsPath,
     ground_truth_path: config.groundTruthPath,
     index_path: config.indexPath,
+    source: config.benchmark.source,
     input_hashes: buildBenchmarkManifestInputHashes(config),
     git_commit: provenance?.gitCommit,
     git_commit_short: provenance?.gitCommitShort,
@@ -270,7 +291,7 @@ export function createBenchmarkManifestSnapshot(
 }
 
 export function listManagedPresetNames(): string[] {
-  return BENCHMARKS.flatMap((benchmark) => Object.keys(benchmark.managedPresets));
+  return getAllBenchmarks().flatMap((benchmark) => Object.keys(benchmark.managedPresets));
 }
 
 export function resolveManagedPreset(presetName: string): {
@@ -294,7 +315,8 @@ export function resolveManagedPreset(presetName: string): {
     return { benchmark, preset };
   }
 
-  const matches = BENCHMARKS.flatMap((benchmark) => {
+  const benchmarks = getAllBenchmarks();
+  const matches = benchmarks.flatMap((benchmark) => {
     const preset = benchmark.managedPresets[presetPart];
     return preset ? [{ benchmark, preset }] : [];
   });
@@ -305,9 +327,11 @@ export function resolveManagedPreset(presetName: string): {
     throw new Error(`Preset name is ambiguous: ${presetName}`);
   }
   throw new Error(
-    `Unknown preset ${presetName}. Supported presets: ${BENCHMARKS.flatMap((benchmark) =>
-      Object.keys(benchmark.managedPresets).map((preset) => `${benchmark.id}/${preset}`),
-    ).join(", ")}`,
+    `Unknown preset ${presetName}. Supported presets: ${benchmarks
+      .flatMap((benchmark) =>
+        Object.keys(benchmark.managedPresets).map((preset) => `${benchmark.id}/${preset}`),
+      )
+      .join(", ")}`,
   );
 }
 

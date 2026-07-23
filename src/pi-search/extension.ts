@@ -29,8 +29,9 @@ import {
   executeReadSearchResultsTool,
   executeSearchTool,
 } from "./tool_handlers";
+import { parsePiSearchToolInterface, type PiSearchToolInterface } from "./tool_interface";
 
-export type PiSearchToolInterface = "pi-serini-3tool" | "pyserini-rest-2tool";
+export type { PiSearchToolInterface } from "./tool_interface";
 
 export type PiSearchExtensionOptions = {
   resolveConfig?: (env: NodeJS.ProcessEnv) => PiSearchExtensionConfig;
@@ -42,13 +43,7 @@ export type PiSearchExtensionOptions = {
 };
 
 function resolveToolInterface(options: PiSearchExtensionOptions): PiSearchToolInterface {
-  const raw = options.toolInterface ?? process.env.PI_SEARCH_TOOL_INTERFACE ?? "pi-serini-3tool";
-  if (raw === "pi-serini-3tool" || raw === "pyserini-rest-2tool") {
-    return raw;
-  }
-  throw new Error(
-    `Invalid PI_SEARCH_TOOL_INTERFACE=${raw}. Expected pi-serini-3tool or pyserini-rest-2tool.`,
-  );
+  return parsePiSearchToolInterface(options.toolInterface ?? process.env.PI_SEARCH_TOOL_INTERFACE);
 }
 
 export function registerPiSearchExtension(
@@ -184,11 +179,11 @@ export function registerPiSearchExtension(
     label: "Search",
     description:
       toolInterface === "pyserini-rest-2tool"
-        ? "Search the configured Pyserini REST backend and return ranked hits directly. The first argument must be reason, a brief rationale of at most 100 words."
+        ? "Search the configured backend and return ranked hits directly. The first argument must be reason, a brief rationale of at most 100 words."
         : "Search the configured pi-search backend using a raw query string. The first argument must be reason, a brief rationale of at most 100 words.",
     promptSnippet:
       toolInterface === "pyserini-rest-2tool"
-        ? "Always supply reason first, under 100 words. Use query for a concise lexical query. The tool returns ranked Pyserini REST hits directly; inspect promising docids with read_document."
+        ? "Always supply reason first, under 100 words. Use query for a concise lexical query. The tool returns ranked hits directly; inspect promising docids with read_document."
         : "Always supply reason first, under 100 words. Use query for a concise raw search string based on the original wording or one grounded refinement. The tool returns a search_id plus the first page of results.",
     promptGuidelines:
       toolInterface === "pyserini-rest-2tool"
@@ -241,7 +236,7 @@ export function registerPiSearchExtension(
     label: "Read Document",
     description:
       toolInterface === "pyserini-rest-2tool" && !pyseriniRestPaginatedRead
-        ? "Fetch a full document by docid from the configured Pyserini REST backend. The first argument must be reason, a brief rationale of at most 100 words."
+        ? "Fetch a full document by docid from the configured backend. The first argument must be reason, a brief rationale of at most 100 words."
         : "Read a retrieved document by docid. Supports offset and limit for paginated line-based reading, similar to the built-in read tool. The first argument must be reason, a brief rationale of at most 100 words.",
     promptSnippet:
       toolInterface === "pyserini-rest-2tool" && !pyseriniRestPaginatedRead
@@ -252,7 +247,7 @@ export function registerPiSearchExtension(
         ? [
             "Always provide reason as the first argument. Keep it specific and under 100 words.",
             "Use read_document to verify evidence from a specific docid before answering.",
-            "Do not provide offset or limit; this tool fetches the full document returned by Pyserini REST.",
+            "Do not provide offset or limit; this tool fetches the full document returned by the backend.",
           ]
         : [
             "Always provide reason as the first argument. Keep it specific and under 100 words.",

@@ -106,6 +106,7 @@ function main(): void {
   });
   const retrievalEvaluation = resolveBenchmarkRetrievalEvaluation({
     benchmarkId: benchmarkConfig.benchmark.id,
+    querySetId: benchmarkConfig.querySetId,
     sourceType: "run-file",
   });
   if (retrievalEvaluation.selectedBackend !== "trec_eval" || !retrievalEvaluation.trecEvalMetrics) {

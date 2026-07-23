@@ -29,6 +29,8 @@ import {
   resolveBenchmarkConfig,
 } from "../benchmarks/registry";
 import { resolveGitCommitProvenance } from "../runtime/git";
+import { writeRankedListTrecRunFile } from "../evaluation/ranked_list_output";
+import { hasPiSearchOutputMode } from "../pi-search/agent_prompt";
 
 type Args = {
   benchmarkId?: string;
@@ -44,6 +46,10 @@ type Args = {
   queryPath?: string;
   qrelsPath?: string;
   indexPath?: string;
+  outputMode?: string;
+  toolInterface?: string;
+  rankedListDepth?: number;
+  rankedListCount?: number;
   host?: string;
   port?: number;
   autoSummarizeOnMerge?: boolean;
@@ -102,6 +108,10 @@ type PersistedRunSetup = {
   shardRetryMode?: string;
   toolInterface?: string;
   searchBackendKind?: string;
+  outputMode?: string;
+  outputModes?: string[];
+  rankedListDepth?: string;
+  rankedListCount?: string;
 };
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -227,6 +237,30 @@ function parseArgs(argv: string[]): Args {
         args.indexPath = next;
         index += 1;
         break;
+      case "--outputMode":
+      case "--output-mode":
+        if (!next) throw new Error(`${arg} requires a value`);
+        args.outputMode = next;
+        index += 1;
+        break;
+      case "--toolInterface":
+      case "--tool-interface":
+        if (!next) throw new Error(`${arg} requires a value`);
+        args.toolInterface = next;
+        index += 1;
+        break;
+      case "--rankedListDepth":
+      case "--ranked-list-depth":
+        if (!next) throw new Error(`${arg} requires a value`);
+        args.rankedListDepth = parseInteger(next, "rankedListDepth");
+        index += 1;
+        break;
+      case "--rankedListCount":
+      case "--ranked-list-count":
+        if (!next) throw new Error(`${arg} requires a value`);
+        args.rankedListCount = parseInteger(next, "rankedListCount");
+        index += 1;
+        break;
       case "--host":
         if (!next) throw new Error(`${arg} requires a value`);
         args.host = next;
@@ -315,6 +349,10 @@ Options:
   --query-file <path>            Explicit override; wins over benchmark defaults
   --qrels <path>                 Explicit override; wins over benchmark defaults
   --index-path <path>            Explicit override; wins over benchmark defaults
+  --output-mode <answer|ranked_list|answer+ranked_list>
+  --tool-interface <pyserini-rest-2tool|pi-serini-3tool>
+  --ranked-list-depth <n>        Max requested ranked-list length (default: 1000)
+  --ranked-list-count <n>        Require exactly this many ranked docids
   --host <host>
   --port <port>
   --max-shard-attempts <n>
@@ -342,6 +380,10 @@ function resolveShardedLaunchPlan(args: Args): ShardedLaunchPlan {
     queryPath: args.queryPath,
     qrelsPath: args.qrelsPath,
     indexPath: args.indexPath,
+    outputMode: args.outputMode,
+    toolInterface: args.toolInterface,
+    rankedListDepth: args.rankedListDepth,
+    rankedListCount: args.rankedListCount,
   });
   const shardCount =
     args.shardCount ??
@@ -419,6 +461,13 @@ function printShardedLaunchPlan(plan: ShardedLaunchPlan): void {
   console.log(`BENCHMARK=${plan.benchmarkId}`);
   console.log(`QUERY_SET=${plan.querySetId}`);
   console.log(`PROMPT_VARIANT=${plan.piSearchPromptVariant}`);
+  console.log(`OUTPUT_MODE=${plan.outputMode}`);
+  if (hasPiSearchOutputMode(plan.outputModes, "ranked_list")) {
+    console.log(`RANKED_LIST_DEPTH=${plan.rankedListDepth}`);
+    if (plan.rankedListCount) {
+      console.log(`RANKED_LIST_COUNT=${plan.rankedListCount}`);
+    }
+  }
   console.log(`MODEL=${plan.model}`);
   console.log(`QUERY_FILE=${plan.queryPath}`);
   console.log(`QRELS_FILE=${plan.qrelsPath}`);
@@ -540,6 +589,11 @@ function buildPersistedRunSetup(args: {
   timeoutSeconds: number;
   indexPath: string;
   backendKind: "shared-bm25" | "pyserini-rest";
+  outputMode: string;
+  outputModes: ShardedLaunchPlan["outputModes"];
+  toolInterface: ShardedLaunchPlan["toolInterface"];
+  rankedListDepth: number;
+  rankedListCount?: number;
 }): PersistedRunSetup {
   return {
     slice: args.querySetId,
@@ -555,11 +609,17 @@ function buildPersistedRunSetup(args: {
     bm25Threads: resolveEnvValue("PI_BM25_THREADS", "1"),
     maxShardAttempts: resolveEnvValue("MAX_SHARD_ATTEMPTS"),
     shardRetryMode: resolveEnvValue("SHARD_RETRY_MODE"),
-    toolInterface:
-      args.backendKind === "pyserini-rest"
-        ? (resolveEnvValue("PI_SEARCH_TOOL_INTERFACE") ?? "pyserini-rest-2tool")
-        : "pi-serini-3tool",
+    toolInterface: args.toolInterface,
     searchBackendKind: args.backendKind,
+    outputMode: args.outputMode,
+    outputModes: [...args.outputModes],
+    rankedListDepth: hasPiSearchOutputMode(args.outputModes, "ranked_list")
+      ? String(args.rankedListDepth)
+      : undefined,
+    rankedListCount:
+      hasPiSearchOutputMode(args.outputModes, "ranked_list") && args.rankedListCount
+        ? String(args.rankedListCount)
+        : undefined,
   };
 }
 
@@ -592,6 +652,11 @@ function writeMergedRunMetadata(plan: ShardedLaunchPlan, totalQueries: number): 
         timeoutSeconds: plan.timeoutSeconds,
         indexPath: plan.indexPath,
         backendKind: plan.backendKind,
+        outputMode: plan.outputMode,
+        outputModes: plan.outputModes,
+        toolInterface: plan.toolInterface,
+        rankedListDepth: plan.rankedListDepth,
+        rankedListCount: plan.rankedListCount,
       }),
       null,
       2,
@@ -624,6 +689,9 @@ export function mergeShardOutputs(
     }
   }
   writeMergedRunMetadata(plan, totalQueries);
+  if (hasPiSearchOutputMode(plan.outputModes, "ranked_list")) {
+    writeRankedListTrecRunFile({ runDir: resolve(REPO_ROOT, plan.mergedOutputDir) });
+  }
 }
 
 async function isTcpPortListening(host: string, port: number): Promise<boolean> {
@@ -677,6 +745,11 @@ function spawnShard(plan: ShardedLaunchPlan, shard: ShardFile, attempt: number):
     String(plan.timeoutSeconds),
     "--prompt-variant",
     plan.piSearchPromptVariant,
+    "--output-mode",
+    plan.outputMode,
+    "--ranked-list-depth",
+    String(plan.rankedListDepth),
+    ...(plan.rankedListCount ? ["--ranked-list-count", String(plan.rankedListCount)] : []),
     "--qrels",
     plan.qrelsPath,
     "--index-path",
@@ -889,6 +962,7 @@ async function main(): Promise<void> {
   logLine(runLogPath, `TIMEOUT_SECONDS=${plan.timeoutSeconds}`);
   logLine(runLogPath, `INDEX_PATH=${plan.indexPath}`);
   logLine(runLogPath, `SEARCH_BACKEND_KIND=${plan.backendKind}`);
+  logLine(runLogPath, `PI_SEARCH_TOOL_INTERFACE=${plan.toolInterface}`);
   if (plan.backendKind === "shared-bm25") {
     logLine(runLogPath, `BM25_K1=${process.env.PI_BM25_K1?.trim() || "0.9"}`);
     logLine(runLogPath, `BM25_B=${process.env.PI_BM25_B?.trim() || "0.4"}`);
@@ -896,10 +970,6 @@ async function main(): Promise<void> {
   } else {
     logLine(runLogPath, `PYSERINI_REST_BASE_URL=${readEnv("PYSERINI_REST_BASE_URL") ?? ""}`);
     logLine(runLogPath, `PYSERINI_REST_INDEX=${readEnv("PYSERINI_REST_INDEX") ?? ""}`);
-    logLine(
-      runLogPath,
-      `PI_SEARCH_TOOL_INTERFACE=${readEnv("PI_SEARCH_TOOL_INTERFACE") ?? "pyserini-rest-2tool"}`,
-    );
   }
   logLine(runLogPath, `MAX_SHARD_ATTEMPTS=${plan.maxShardAttempts}`);
   logLine(runLogPath, `SHARD_RETRY_MODE=${plan.shardRetryMode}`);

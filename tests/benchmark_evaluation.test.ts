@@ -20,11 +20,12 @@ void test("benchmark evaluation resolver exposes benchmark-specific retrieval ba
 
   const msmarcoRunFile = resolveBenchmarkRetrievalEvaluation({
     benchmarkId: "msmarco-v1-passage",
+    querySetId: "dl19",
     sourceType: "run-file",
   });
   assert.equal(msmarcoRunFile.selectedBackend, "trec_eval");
   assert.ok(msmarcoRunFile.trecEvalMetrics);
-  assert.equal(msmarcoRunFile.trecEvalMetrics?.[0]?.id, "ndcg_cut_10");
+  assert.equal(msmarcoRunFile.trecEvalMetrics?.[0]?.id, "map_l2");
   assert.deepEqual(msmarcoRunFile.internalMetricSemantics, {
     ndcgGainMode: "linear",
     recallRelevantThreshold: 2,
@@ -36,6 +37,16 @@ void test("benchmark evaluation resolver exposes benchmark-specific retrieval ba
     sourceType: "run-dir",
   });
   assert.equal(msmarcoRunDir.selectedBackend, "internal");
+
+  const msmarcoDevRunFile = resolveBenchmarkRetrievalEvaluation({
+    benchmarkId: "msmarco-v1-passage",
+    querySetId: "dev",
+    sourceType: "run-file",
+  });
+  assert.deepEqual(
+    msmarcoDevRunFile.trecEvalMetrics?.map((metric) => metric.id),
+    ["recip_rank_10", "recall_1000"],
+  );
 });
 
 void test("benchmark evaluation resolver exposes benchmark-specific judge defaults", () => {

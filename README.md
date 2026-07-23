@@ -66,7 +66,34 @@ Pi packages now live under the `@earendil-works/*` npm namespace. This repo depe
 
 Model note: `gpt-5.3-codex` was used for some historical judge runs, but OpenAI's Codex model documentation now lists it as deprecated when signing in with ChatGPT. Use the current recommended Codex models for new subscription-backed runs, and label any replacement judge model explicitly in reports.
 
+- 2026-06-26: Default judge model updated to gpt-5.5.
+
 ## Quickstart
+
+### Use Castorini prebuilt assets
+
+Piika reads the live Castorini catalogs instead of keeping a handwritten list of indexes, topics,
+and qrels. Search them, then install any compatible combination:
+
+```bash
+piika prebuilt indexes msmarco-v1-passage
+piika prebuilt topics dl19
+piika prebuilt qrels dl19
+piika prebuilt setup msmarco-v1-passage --topics dl19-passage
+piika prebuilt setup msmarco-v2-passage --topics dl21 --qrels dl21-passage
+piika run --benchmark prebuilt-msmarco-v1-passage-dl19-passage
+```
+
+`prebuilt setup` downloads and verifies the selected index, downloads the official Anserini topics
+and qrels, normalizes supported topic formats into piika's TSV query format, and writes an installed
+benchmark manifest under `data/prebuilt/`. Installed manifests are discovered automatically by all
+normal benchmark commands. Use `--qrels <id>` when the desired qrels do not share the topic ID or
+one of its upstream aliases, and `--dry-run` to inspect paths and URLs without downloading assets.
+
+The local BM25 backend accepts upstream catalog entries with type `inverted`. TSV, JSONL, and
+classic TREC topic readers are normalized directly; piika reports a clear error for specialized
+Anserini topic readers that do not yet have a lossless converter. Index downloads are atomic,
+checksum-verified, and retried against the mirrors published in the upstream catalog.
 
 ### 1. Set up benchmark assets
 
@@ -147,6 +174,79 @@ npm run run:benchmark:query-set -- --supplied-doc-bundle data/my-run/supplied-do
 ```
 
 Rows use `{ "qid", "question", "groups": [{ "docs": [{ "doc_id", "cited_snippet", "full_text" }] }] }`. Supplied document ids are recorded in run metadata and counted in surfaced, previewed, and agent-visible retrieval views. See [docs/running-benchmarks.md](docs/running-benchmarks.md#supplied-document-bundles) for details.
+
+Benchmark launches default to the direct `pyserini-rest-2tool` interface: `search` returns
+ranked hits directly and `read_document` opens a selected document. This interface is also used
+when the configured backend is local Anserini BM25; the name describes the two-tool contract, not
+a requirement that the backend be remote. To reproduce the cached-search pagination condition,
+opt in explicitly with `PI_SEARCH_TOOL_INTERFACE=pi-serini-3tool` or
+`--tool-interface pi-serini-3tool`.
+
+### Ranked-list output mode
+
+For traditional retrieval benchmarks, set `OUTPUT_MODE=ranked_list` to ask the agent to return a single ranked docid list instead of a final answer. Each per-query JSON records `ranked_docids`, and the run directory receives `ranked_list.trec` for standard qrels-based evaluation.
+
+```bash
+OUTPUT_MODE=ranked_list \
+RANKED_LIST_DEPTH=1000 \
+BENCHMARK=msmarco-v1-passage \
+QUERY_SET=dl20 \
+MODEL=openai-codex/gpt-5.4-mini \
+npm run run:benchmark:query-set:shared-bm25
+```
+
+To request an exact-size ranking, set `RANKED_LIST_COUNT` in addition to the maximum
+depth. For example, this asks the agent for exactly 30 unique docids:
+
+```bash
+OUTPUT_MODE=ranked_list \
+RANKED_LIST_DEPTH=30 \
+RANKED_LIST_COUNT=30 \
+BENCHMARK=msmarco-v1-passage \
+QUERY_SET=dl20 \
+npm run run:benchmark:query-set:shared-bm25
+```
+
+The equivalent CLI option is `--ranked-list-count 30`. Outputs longer than the requested
+count are truncated. Shorter outputs are preserved and marked with
+`ranked_list_count_error` in the per-query JSON; Piika does not silently pad the ranking
+with documents the agent did not select.
+
+Omitting `RANKED_LIST_COUNT` is intentional and remains the default. In that condition,
+`RANKED_LIST_DEPTH` is only a maximum and the agent chooses the final list length. Exact count is
+not merely output formatting: a DL19 ablation found that requiring exactly 10 documents reduced
+search effort and lowered nDCG@10 relative to an otherwise matched optional-count run. Treat an
+exact count as an experimental retrieval constraint, not as a harmless serialization option. See
+the [recorded ablation](docs/msmarco-v1-passage-ranked-list-results.md#exact-count-ablation-on-dl19).
+
+Evaluate the generated run file with the existing trec_eval wrapper:
+
+```bash
+npx tsx src/evaluation/eval_retrieval_trec_eval.ts \
+  --benchmark msmarco-v1-passage \
+  --query-set dl20 \
+  --run-file runs/<run>/ranked_list.trec
+```
+
+The reproducible MS MARCO comparison protocol and recorded GPT-5.5 results are tracked in
+[`docs/msmarco-v1-passage-ranked-list-results.md`](docs/msmarco-v1-passage-ranked-list-results.md).
+
+### Composing answer and ranked-list outputs
+
+Output modes are atomic and composable. To have one agent research a query once and return both
+an answer and a document ranking, join the modes with `+`:
+
+```bash
+OUTPUT_MODE=answer+ranked_list \
+RANKED_LIST_DEPTH=30 \
+npm run run:benchmark:query-set -- --benchmark benchmark-template
+```
+
+The response contains an `Answer` section followed by a `Ranked List` section. Per-query JSON keeps
+the assistant response for answer evaluation and records `ranked_docids`; the run also produces
+`ranked_list.trec`. Internally this is the composition of the `answer` and `ranked_list` capabilities,
+not a separate third mode. A comma (`answer,ranked_list`) is also accepted and normalized to the
+canonical `answer+ranked_list` form.
 
 ### BM25 tuning during benchmark runs
 

@@ -65,6 +65,10 @@ void test("mergeShardOutputs synthesizes merged metadata instead of failing on s
       querySetId: "dev",
       model: "openai-codex/gpt-5.4-mini",
       piSearchPromptVariant: "plain_minimal",
+      outputMode: "answer",
+      outputModes: ["answer"],
+      toolInterface: "pyserini-rest-2tool",
+      rankedListDepth: 1000,
       outputDir: root,
       timeoutSeconds: 300,
       thinking: "medium",
@@ -123,4 +127,79 @@ void test("mergeShardOutputs synthesizes merged metadata instead of failing on s
   assert.equal(manifest.benchmark_id, "benchmark-template");
   assert.equal(manifest.query_set_id, "dev");
   assert.equal(manifest.query_path, queryPath);
+});
+
+void test("mergeShardOutputs writes merged ranked-list TREC run file", () => {
+  const root = mkdtempSync(join(tmpdir(), "sharded-merge-ranked-list-"));
+  const queryPath = join(root, "queries.tsv");
+  const qrelsPath = join(root, "qrels.txt");
+  const indexPath = join(root, "index");
+  const shardOutputRoot = join(root, "shard-runs");
+  const mergedOutputDir = join(root, "merged");
+
+  writeFileSync(queryPath, "q1\tfirst query\nq2\tsecond query\n", "utf8");
+  writeFileSync(qrelsPath, "q1 0 d1 1\nq2 0 d3 1\n", "utf8");
+  mkdirSync(indexPath, { recursive: true });
+  mkdirSync(join(shardOutputRoot, "shard_01"), { recursive: true });
+  mkdirSync(join(shardOutputRoot, "shard_02"), { recursive: true });
+  writeFileSync(
+    join(shardOutputRoot, "shard_01", "q1.json"),
+    JSON.stringify({ query_id: "q1", ranked_docids: ["d2", "d1"] }) + "\n",
+    "utf8",
+  );
+  writeFileSync(
+    join(shardOutputRoot, "shard_02", "q2.json"),
+    JSON.stringify({ query_id: "q2", ranked_docids: ["d3"] }) + "\n",
+    "utf8",
+  );
+
+  mergeShardOutputs(
+    {
+      benchmarkId: "benchmark-template",
+      backendKind: "shared-bm25",
+      querySetId: "dev",
+      model: "openai-codex/gpt-5.4-mini",
+      piSearchPromptVariant: "plain_minimal",
+      outputMode: "ranked_list",
+      outputModes: ["ranked_list"],
+      toolInterface: "pyserini-rest-2tool",
+      rankedListDepth: 1000,
+      outputDir: root,
+      timeoutSeconds: 300,
+      thinking: "medium",
+      piBin: "pi",
+      extensionPath: "src/extensions/pi_search.ts",
+      queryPath,
+      qrelsPath,
+      indexPath,
+      shardCount: 2,
+      host: "127.0.0.1",
+      port: 12345,
+      outputRoot: root,
+      logDir: join(root, "logs"),
+      bm25LogPath: join(root, "logs", "bm25.log"),
+      shardQueryDir: join(root, "shard-queries"),
+      shardOutputRoot,
+      mergedOutputDir,
+      controlDir: join(root, "control"),
+      retryRequestPath: join(root, "control", "retry-request.json"),
+      retryApprovalPath: join(root, "control", "retry-approval.json"),
+      autoSummarizeOnMerge: false,
+      autoEvaluateOnMerge: false,
+      evaluateForce: false,
+      evaluateLimit: 0,
+      maxShardAttempts: 2,
+      shardRetryMode: "manual",
+      modelTag: "gpt54mini",
+      runStamp: "20260416_000000",
+      resolvedIndexPath: indexPath,
+    },
+    ["shard_01", "shard_02"],
+    2,
+  );
+
+  assert.equal(
+    readFileSync(join(mergedOutputDir, "ranked_list.trec"), "utf8"),
+    "q1 Q0 d2 1 2 pi-agent\nq1 Q0 d1 2 1 pi-agent\nq2 Q0 d3 1 1 pi-agent\n",
+  );
 });

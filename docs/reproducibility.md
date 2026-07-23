@@ -67,6 +67,8 @@ That file freezes the resolved benchmark condition used for the run, including f
 - `secondary_qrels_path`
 - `ground_truth_path`
 - `index_path`
+- `source` for installed Castorini prebuilt benchmarks, including the logical index/topics/qrels IDs,
+  exact asset URLs, and the catalog-published index MD5
 - `input_hashes`
   - `query`
   - `qrels`
