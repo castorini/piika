@@ -1,0 +1,4 @@
+interface:
+  display_name: "Run Piika NanoKnow"
+  short_description: "Run NanoKnow with or without supplied docs"
+  default_prompt: "Use $run-piika-nanoknow to run and evaluate a NanoKnow benchmark end to end."

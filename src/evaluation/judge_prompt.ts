@@ -47,6 +47,7 @@ export function createJudgePrompt(input: JudgePromptInput): string {
     "Do not use outside knowledge.",
     "Focus only on whether the response's final answer matches the correct answer.",
     "Allow harmless wording differences, equivalent formatting, and added correct detail.",
+    "The correct-answer field may be a JSON array of acceptable alternatives; matching any one alternative is correct.",
     "For numerical answers, allow small formatting differences and obvious equivalent forms.",
     "If the response does not contain a final answer you can extract, set extracted_final_answer to null and correct to false.",
     "",

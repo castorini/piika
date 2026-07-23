@@ -891,6 +891,14 @@ async function main() {
       timeoutSeconds: args.timeoutSeconds,
       isolatedAgentDir,
     });
+    if (phase.exitCode !== 0 && !phase.timedOut) {
+      const stderrTail = phase.stderr.trim().split(/\r?\n/).slice(-20).join("\n");
+      throw new Error(
+        `pi judge exited with status ${phase.exitCode ?? "null"} for query_id=${queryId} before producing a trusted eval record.${
+          stderrTail ? `\nStderr tail:\n${stderrTail}` : ""
+        }`,
+      );
+    }
     const judgeResponseText = getFinalAssistantText(phase.events);
     const judgeResult = phase.timedOut
       ? {

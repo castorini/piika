@@ -1,0 +1,4 @@
+interface:
+  display_name: "Use Piika"
+  short_description: "Run, evaluate, and report Piika benchmarks"
+  default_prompt: "Use $use-piika to configure and run a Piika benchmark end to end."

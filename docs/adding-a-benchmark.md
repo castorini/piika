@@ -1,7 +1,9 @@
 # Adding a benchmark
 
-This repo is benchmark-manifest-driven.
-Adding a new benchmark should primarily mean registering one typed benchmark definition and implementing any benchmark-specific setup scripts, not editing a dozen unrelated entrypoints.
+This repo is benchmark-manifest-driven. Most datasets should be added as dynamically installed
+JSON manifests, without changing the TypeScript registry. Add a built-in typed definition only
+when the benchmark is a permanent package feature with code-owned setup, managed presets, or
+semantics that cannot be expressed declaratively.
 
 Related docs:
 
@@ -25,7 +27,12 @@ The architecture intentionally separates:
   - prompt construction
   - artifact-path helpers
   - isolated agent-dir handling
-- benchmark-specific concerns under `src/benchmarks/` plus benchmark-scoped setup scripts
+- reusable benchmark metadata in installed `benchmark.json` files
+  - dataset/query files
+  - qrels and optional secondary qrels
+  - optional ground truth
+  - evaluation modes and index paths
+- package-owned benchmark concerns under `src/benchmarks/` plus benchmark-scoped setup scripts
   - dataset/query files
   - qrels and optional secondary qrels
   - optional ground truth
@@ -34,9 +41,39 @@ The architecture intentionally separates:
 
 That separation is what keeps multi-benchmark support maintainable.
 
-## 1. Add the benchmark definition
+## 1. Choose installed or built-in integration
 
-Create a new file under:
+Use an installed manifest when the benchmark only needs:
+
+- ids, aliases, and display metadata
+- query-set paths
+- qrels and optional ground-truth paths
+- an index path or remote index name
+- existing retrieval and judge evaluation modes
+
+Install it with:
+
+```bash
+npm run install:benchmark-manifest -- \
+  --manifest path/to/benchmark.json \
+  --dry-run
+
+npm run install:benchmark-manifest -- \
+  --manifest path/to/benchmark.json
+```
+
+The default destination is `data/prebuilt/<benchmark-id>/benchmark.json`. Installed manifests are
+automatically visible to launch, evaluation, reporting, and benchmark discovery. Installation is
+idempotent for identical content and protects differing existing content unless `--force` is
+explicit.
+
+Use a built-in TypeScript definition only when the package must ship benchmark-specific code,
+setup steps, managed presets, or genuinely distinct evaluation semantics.
+
+## 2. Define benchmark metadata
+
+For an installed benchmark, create a JSON object matching `BenchmarkDefinition`. For a built-in
+benchmark, create a TypeScript file under:
 
 - `src/benchmarks/<your_benchmark>.ts`
 
@@ -73,15 +110,16 @@ keep defaults benchmark-scoped and declarative here instead of spreading them ac
 
 Use query-set-specific overrides when different query sets need different qrels, as with MSMARCO `dl19` vs `dl20`.
 
-## 2. Register the benchmark
+## 3. Register built-in benchmarks only
 
 Update:
 
 - `src/benchmarks/registry.ts`
 
-Import the new benchmark and add it to `BENCHMARKS`.
+Import the new benchmark and add it to `BUILTIN_BENCHMARKS`.
 
-Once registered, these generic helpers will automatically understand it:
+Skip this step for installed manifests. Once a built-in definition is registered, these generic
+helpers will automatically understand it:
 
 - `getBenchmarkDefinition()`
 - `resolveBenchmarkConfig()`
@@ -89,7 +127,7 @@ Once registered, these generic helpers will automatically understand it:
 - `resolveManagedPreset()`
 - `resolveBenchmarkSetupStep()`
 
-## 3. Add benchmark-scoped setup scripts
+## 4. Add benchmark-scoped setup scripts when necessary
 
 Add benchmark-specific setup implementations under:
 
@@ -106,7 +144,7 @@ setup internals are often dataset-specific, but setup dispatch should still be s
 
 The current architectural decision is to keep benchmark setup implementations as benchmark-scoped subprocess boundaries unless a benchmark's setup becomes simple enough to be genuinely generic. In other words, `src/orchestration/setup_benchmark_entry.ts` owns the operator-facing control plane, while `scripts/benchmarks/<your_benchmark>/...` owns the benchmark-specific bootstrap details.
 
-## 4. Decide evaluation semantics
+## 5. Decide evaluation semantics
 
 The generic retrieval/report pipeline assumes path defaults can come from the benchmark manifest, but not every benchmark necessarily has the same semantics.
 
@@ -127,7 +165,7 @@ Do not invent fake ground-truth compatibility just to reuse the gold-answer path
 
 If the benchmark requires semantic differences instead of just different paths, add benchmark-specific evaluation adapters deliberately rather than smuggling differences through ad hoc conditionals. The current mechanism is `BenchmarkDefinition.retrievalEvaluation`, which lets a benchmark choose an internal TypeScript backend or a `trec_eval` run-file backend. Both backends now write normalized retrieval-summary artifacts under `evals/retrieval/<benchmark>/...`.
 
-## 5. Decide managed presets
+## 6. Decide managed presets
 
 If the benchmark needs operator-facing managed presets for `benchctl`, define them in:
 
@@ -143,7 +181,7 @@ Each preset can define:
 
 Use registry-defined presets for benchmark-specific ergonomics, but keep generic launch entrypoints benchmark-agnostic.
 
-## 6. Add or stage local assets
+## 7. Add or stage local assets
 
 Typical local asset layout should remain benchmark-scoped:
 
@@ -154,7 +192,7 @@ Typical local asset layout should remain benchmark-scoped:
 
 Avoid reusing BrowseComp-Plus paths or names in a new benchmark unless the assets are genuinely shared.
 
-## 7. Verify run-manifest behavior
+## 8. Verify run-manifest behavior
 
 Every run should emit:
 
@@ -174,9 +212,10 @@ Verify that downstream tools resolve your benchmark correctly from those artifac
 
 This is critical because reproducibility now depends on artifact-local benchmark metadata, not only mutable repo defaults.
 
-## 8. Add tests
+## 9. Add tests
 
-At minimum, add or update tests for:
+For an installed manifest, test validation, installation, discovery, and launcher dry-run
+resolution. For a built-in benchmark, add or update tests for:
 
 - registry lookup
 - query-set resolution
@@ -187,11 +226,12 @@ At minimum, add or update tests for:
 
 Good starting files:
 
+- `tests/installed_benchmark_manifest.test.ts`
 - `tests/benchmarks/registry.test.ts`
 - `tests/launcher_wrappers.test.ts`
 - `tests/report_run_markdown.test.ts`
 
-## 9. Document the benchmark
+## 10. Document the benchmark
 
 Update operator-facing docs:
 
@@ -214,28 +254,28 @@ Document:
 
 Use this as the short version:
 
-1. Add `src/benchmarks/<your_benchmark>.ts`
-2. Register it in `src/benchmarks/registry.ts`
-3. Add `scripts/benchmarks/<your_benchmark>/...` setup scripts
-4. Add local dataset/index path conventions under `data/` and `indexes/`
-5. Verify run-manifest snapshot output
-6. Verify `run_setup.json` output for new runs
-7. Verify summarize/eval/report behavior
-8. Add tests
-9. Update docs
+1. Prefer a JSON `BenchmarkDefinition` and install it with `install:benchmark-manifest`
+2. Add local dataset/index path conventions under `data/` and `indexes/`
+3. Verify benchmark discovery and launcher dry-run output
+4. Verify run-manifest snapshot and `run_setup.json` output
+5. Verify summarize/eval/report behavior
+6. Add a built-in TypeScript definition only if package-owned behavior requires it
+7. Add tests and update docs
 
 ## What not to do
 
 Do not:
 
 - hardcode new benchmark defaults into many separate CLIs
+- add a built-in registry entry for a path-only dataset that an installed manifest can express
 - add fallback legacy dual-mode logic unless there is a real compatibility requirement
 - hide benchmark-specific evaluation semantics inside generic path helpers
 - make shell wrappers the only supported path for a new benchmark
 
 The intended steady state is:
 
-- benchmark metadata lives in typed registry entries
+- reusable benchmark metadata lives in validated installed manifests
+- package-owned benchmark metadata lives in typed registry entries
 - active Node-first entrypoints live under `src/orchestration/`
 - compatibility-only TypeScript entrypoints live under `src/legacy/`
 - shared runtime helpers live under `src/runtime/`

@@ -119,6 +119,27 @@ Judge evaluation supports two explicit modes:
 
 The benchmark manifest declares which modes are supported and which mode is the benchmark default.
 
+### Multiple acceptable gold answers
+
+Gold-answer ground truth may encode multiple acceptable alternatives as a JSON array serialized in
+the `answer` field. The judge is instructed to mark a response correct when its final answer
+matches any alternative.
+
+Normalize source JSONL containing answer arrays with:
+
+```bash
+npm run adapt:multi-answer-ground-truth -- \
+  --queries path/to/queries.tsv \
+  --answers path/to/source-answers.jsonl \
+  --output path/to/ground-truth.jsonl \
+  --id-field qid \
+  --answers-field answer
+```
+
+The adapter joins rows by query id, rejects missing or duplicate records, trims and deduplicates
+string alternatives, and writes the standard `query_id`, `query`, and `answer` ground-truth
+fields. The source id and answer-array field names are configurable.
+
 ### Gold-answer mode
 
 The judge sees:

@@ -115,6 +115,40 @@ manifests are loaded dynamically by `piika benchmarks`, `piika run`, evaluation,
 adding an upstream index or query set does not require a source-code change. Set
 `PIIKA_BENCHMARKS_DIR` to use a different installed-manifest directory.
 
+### Custom installed manifests
+
+The same dynamic loader supports non-Castorini datasets. Create a JSON file matching
+`BenchmarkDefinition`, then validate and install it with:
+
+```bash
+npm run install:benchmark-manifest -- \
+  --manifest path/to/benchmark.json \
+  --dry-run
+
+npm run install:benchmark-manifest -- \
+  --manifest path/to/benchmark.json
+```
+
+The default destination is `data/prebuilt/<benchmark-id>/benchmark.json`. Use `--root <path>` or
+`PIIKA_BENCHMARKS_DIR` for a different manifest root. Identical reinstallation is idempotent.
+Different existing content is protected unless `--force` is passed explicitly.
+
+Use an installed manifest instead of a source-code registry entry when a dataset differs only in
+paths, aliases, query sets, evaluation defaults, or index configuration. Reserve built-in
+TypeScript definitions for benchmarks shipped as permanent package features with code-owned setup
+or semantics.
+
+For source answer JSONL that contains arrays of acceptable alternatives, normalize it with:
+
+```bash
+npm run adapt:multi-answer-ground-truth -- \
+  --queries path/to/queries.tsv \
+  --answers path/to/source-answers.jsonl \
+  --output path/to/ground-truth.jsonl \
+  --id-field qid \
+  --answers-field answer
+```
+
 ## Setup
 
 Set up benchmark assets with:

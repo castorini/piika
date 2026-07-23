@@ -22,6 +22,7 @@
     "piika": "./bin/piika.js"
   },
   "files": [
+    ".agents",
     "bin",
     "src",
     "scripts",
@@ -65,6 +66,8 @@
     "evaluate:retrieval": "npx tsx src/wrappers/evaluate_retrieval_entry.ts",
     "report:run": "npx tsx src/wrappers/report_run_markdown_entry.ts",
     "adapt:search-jsonl-run": "npx tsx src/adapters/import_search_jsonl_run.ts",
+    "adapt:multi-answer-ground-truth": "npx tsx src/adapters/prepare_multi_answer_ground_truth.ts",
+    "install:benchmark-manifest": "npx tsx src/benchmarks/install_manifest_entry.ts",
     "tune:bm25": "npx tsx src/orchestration/tune_bm25_entry.ts",
     "compare:bm25": "npx tsx src/evaluation/compare_bm25_runs.ts",
     "bench": "npx tsx src/operator/benchctl.ts",

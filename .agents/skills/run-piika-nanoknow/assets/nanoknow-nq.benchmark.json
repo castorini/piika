@@ -1,0 +1,25 @@
+{
+  "id": "nanoknow-nq",
+  "aliases": ["nq", "nq-open"],
+  "displayName": "NanoKnow NQ-Open (ClimbMix)",
+  "datasetId": "nanoknow-nq",
+  "piSearchPromptVariant": "plain_minimal",
+  "defaultQuerySetId": "climbmix-supported",
+  "defaultQueryPath": "data/nanoknow-nq/queries/climbmix-supported.tsv",
+  "querySets": {
+    "climbmix-supported": "data/nanoknow-nq/queries/climbmix-supported.tsv"
+  },
+  "defaultQrelsPath": "data/nanoknow-nq/qrels/climbmix-supported.txt",
+  "defaultGroundTruthPath": "data/nanoknow-nq/ground-truth/climbmix-supported.jsonl",
+  "defaultIndexPath": "climbmix-400b",
+  "managedPresets": {},
+  "setup": { "steps": {} },
+  "retrievalEvaluation": {
+    "runFileBackend": "internal",
+    "runDirBackend": "internal"
+  },
+  "judgeEvaluation": {
+    "supportedModes": ["gold-answer", "reference-free"],
+    "defaultMode": "gold-answer"
+  }
+}

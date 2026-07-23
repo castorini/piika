@@ -1,5 +1,5 @@
-import { existsSync, readFileSync, readdirSync } from "node:fs";
-import { resolve } from "node:path";
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { dirname, isAbsolute, relative, resolve } from "node:path";
 import type { BenchmarkDefinition } from "./types";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -19,7 +19,7 @@ export function getInstalledBenchmarkRoot(): string {
   return resolve(process.env.PIIKA_BENCHMARKS_DIR?.trim() || "data/prebuilt");
 }
 
-function parseInstalledBenchmark(path: string): BenchmarkDefinition {
+export function loadInstalledBenchmarkManifest(path: string): BenchmarkDefinition {
   let value: unknown;
   try {
     value = JSON.parse(readFileSync(path, "utf8"));
@@ -34,6 +34,7 @@ function parseInstalledBenchmark(path: string): BenchmarkDefinition {
   const manifest = value as Partial<BenchmarkDefinition>;
   if (
     !isNonEmptyString(manifest.id) ||
+    !/^[a-z0-9][a-z0-9._-]*$/u.test(manifest.id) ||
     !isNonEmptyString(manifest.displayName) ||
     !isNonEmptyString(manifest.datasetId) ||
     manifest.piSearchPromptVariant !== "plain_minimal" ||
@@ -68,6 +69,44 @@ export function loadInstalledBenchmarks(root = getInstalledBenchmarkRoot()): Ben
     .filter((entry) => entry.isDirectory())
     .map((entry) => resolve(root, entry.name, "benchmark.json"))
     .filter(existsSync)
-    .map(parseInstalledBenchmark)
+    .map(loadInstalledBenchmarkManifest)
     .sort((left, right) => left.id.localeCompare(right.id));
+}
+
+export function resolveInstalledBenchmarkManifestPath(
+  manifest: BenchmarkDefinition,
+  root = getInstalledBenchmarkRoot(),
+): string {
+  const resolvedRoot = resolve(root);
+  const target = resolve(resolvedRoot, manifest.id, "benchmark.json");
+  const relativeTarget = relative(resolvedRoot, target);
+  if (!relativeTarget || relativeTarget.startsWith("..") || isAbsolute(relativeTarget)) {
+    throw new Error(`Installed benchmark id escapes the manifest root: ${manifest.id}`);
+  }
+  return target;
+}
+
+export function installBenchmarkManifest(options: {
+  sourcePath: string;
+  root?: string;
+  dryRun?: boolean;
+  force?: boolean;
+}): { benchmark: BenchmarkDefinition; targetPath: string; written: boolean } {
+  const sourcePath = resolve(options.sourcePath);
+  const benchmark = loadInstalledBenchmarkManifest(sourcePath);
+  const targetPath = resolveInstalledBenchmarkManifestPath(benchmark, options.root);
+  const serialized = `${JSON.stringify(benchmark, null, 2)}\n`;
+  if (existsSync(targetPath) && readFileSync(targetPath, "utf8") === serialized) {
+    return { benchmark, targetPath, written: false };
+  }
+  if (existsSync(targetPath) && !options.force) {
+    throw new Error(
+      `Installed benchmark manifest already exists with different contents: ${targetPath}. Pass --force to replace it.`,
+    );
+  }
+  if (!options.dryRun) {
+    mkdirSync(dirname(targetPath), { recursive: true });
+    writeFileSync(targetPath, serialized, "utf8");
+  }
+  return { benchmark, targetPath, written: !options.dryRun };
 }

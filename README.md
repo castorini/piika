@@ -95,6 +95,41 @@ classic TREC topic readers are normalized directly; piika reports a clear error 
 Anserini topic readers that do not yet have a lossless converter. Index downloads are atomic,
 checksum-verified, and retried against the mirrors published in the upstream catalog.
 
+### Install a custom benchmark manifest
+
+Datasets that only need different queries, qrels, ground truth, index paths, aliases, or evaluation
+defaults do not need a TypeScript registry entry. Define a `BenchmarkDefinition` as JSON and install
+it into Piika's dynamic manifest directory:
+
+```bash
+npm run install:benchmark-manifest -- \
+  --manifest path/to/benchmark.json \
+  --dry-run
+
+npm run install:benchmark-manifest -- \
+  --manifest path/to/benchmark.json
+```
+
+The installer validates the manifest and writes
+`data/prebuilt/<benchmark-id>/benchmark.json`. Reinstalling identical content is a no-op; replacing
+different content requires an explicit `--force`. Set `PIIKA_BENCHMARKS_DIR` or pass `--root` to
+use a different manifest directory.
+
+For datasets with multiple acceptable answers per question, adapt source JSONL into Piika's
+ground-truth format:
+
+```bash
+npm run adapt:multi-answer-ground-truth -- \
+  --queries data/custom/queries.tsv \
+  --answers data/custom/source/answers.jsonl \
+  --output data/custom/ground-truth/answers.jsonl \
+  --id-field qid \
+  --answers-field answer
+```
+
+The source id and answers field names are configurable. Answer arrays are deduplicated and judged
+so that matching any acceptable alternative counts as correct.
+
 ### 1. Set up benchmark assets
 
 BrowseComp-Plus base assets:
@@ -395,6 +430,7 @@ Legacy shell scripts under `scripts/` still work, but they are compatibility shi
 - `src/legacy/` — compatibility-only TypeScript entrypoints that are still intentionally preserved for historical low-level contracts
 - `src/runtime/` — shared runtime primitives such as prompt construction, artifact-path helpers, and isolated agent-dir handling
 - `src/benchmarks/` — typed benchmark definitions, registry helpers, run-manifest snapshot logic
+- `src/adapters/` — reusable import and ground-truth normalization adapters
 - `src/wrappers/` — downstream summarize/eval/report wrapper entrypoints and precedence helpers
 - `src/operator/` — monitor, supervisor, TUI, and benchctl operator surfaces
 - `src/evaluation/` — retrieval and judge evaluation backends plus metric helpers
@@ -409,6 +445,7 @@ Legacy shell scripts under `scripts/` still work, but they are compatibility shi
 - `runs/` — benchmark run outputs
 - `evals/` — evaluation outputs
 - `notes/` — local notes and experiment writeups
+- `.agents/skills/` — versioned Codex skills for general Piika and benchmark-specific workflows
 
 ## Read more
 
@@ -418,6 +455,8 @@ Legacy shell scripts under `scripts/` still work, but they are compatibility shi
 - [Evaluation semantics](docs/evaluation.md)
 - [Reproducibility](docs/reproducibility.md)
 - [Adding a benchmark](docs/adding-a-benchmark.md)
+- [General Piika agent skill](.agents/skills/use-piika/SKILL.md)
+- [NanoKnow agent skill](.agents/skills/run-piika-nanoknow/SKILL.md)
 - [BM25 backend interface](docs/bm25-extension-interface.md)
 - Released Run on BrowseComp-Plus (Canary to prevent leakage: `piserini-a-minimal-search-agent`)
   - [piika w/ DeepSeek V4 Flash](https://huggingface.co/datasets/ricky42613/piserini_bcp_deepseekv4_flash)
