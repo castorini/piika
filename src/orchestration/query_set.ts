@@ -76,6 +76,27 @@ function parseArgs(argv: string[]): Args {
         args.rankedListCount = parseInteger(next, "rankedListCount");
         index += 1;
         break;
+      case "--trecRagTeamId":
+      case "--trec-rag-team-id":
+      case "--team-id":
+        if (!next) throw new Error(`${arg} requires a value`);
+        args.trecRagTeamId = next;
+        index += 1;
+        break;
+      case "--trecRagRunId":
+      case "--trec-rag-run-id":
+      case "--run-id":
+        if (!next) throw new Error(`${arg} requires a value`);
+        args.trecRagRunId = next;
+        index += 1;
+        break;
+      case "--trecRagRunDesc":
+      case "--trec-rag-run-desc":
+      case "--run-desc":
+        if (!next) throw new Error(`${arg} requires a value`);
+        args.trecRagRunDesc = next;
+        index += 1;
+        break;
       case "--outputDir":
       case "--output-dir":
         if (!next) throw new Error(`${arg} requires a value`);
@@ -158,6 +179,9 @@ Options:
   --tool-interface <pyserini-rest-2tool|pi-serini-3tool>
   --ranked-list-depth <n>        Max requested ranked-list length (default: 1000)
   --ranked-list-count <n>        Require exactly this many ranked docids
+  --team-id <id>                 TREC RAG team identifier
+  --run-id <id>                  TREC RAG run identifier
+  --run-desc <text>              TREC RAG run description
   --output-dir <dir>
   --timeout-seconds <seconds>
   --thinking <level>

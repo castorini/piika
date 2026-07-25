@@ -285,7 +285,7 @@ async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   const plan = resolveSharedLaunchPlan(args);
   ensureFileExists(plan.queryPath, "Query file");
-  ensureFileExists(plan.qrelsPath, "Qrels file");
+  if (plan.qrelsPath) ensureFileExists(plan.qrelsPath, "Qrels file");
   ensureFileExists(plan.extensionPath, "Extension path");
   printSharedLaunchPlan(plan);
 

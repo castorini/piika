@@ -47,6 +47,13 @@ import {
   writeRankedListTrecRunFile,
 } from "../evaluation/ranked_list_output";
 import {
+  buildTrecRagOutput,
+  parseTrecRagAnswerPayload,
+  writeTrecRagJsonlFromRunDirectory,
+  type TrecRagMetadata,
+  type TrecRagOutput,
+} from "../evaluation/trec_rag_output";
+import {
   createBenchmarkManifestSnapshot,
   getDefaultBenchmarkId,
   resolveBenchmarkConfig,
@@ -83,6 +90,8 @@ type BenchmarkRun = {
   ranked_docids?: string[];
   ranked_list_parse_error?: string;
   ranked_list_count_error?: string;
+  trec_rag_output?: TrecRagOutput;
+  trec_rag_parse_error?: string;
   stats: {
     elapsed_seconds: number;
     assistant_turns: number;
@@ -130,6 +139,9 @@ type PersistedRunSetup = {
   outputModes?: string[];
   rankedListDepth?: string;
   rankedListCount?: string;
+  trecRagTeamId?: string;
+  trecRagRunId?: string;
+  trecRagRunDesc?: string;
 };
 
 type RunPiOptions = {
@@ -282,7 +294,7 @@ async function getSearchBackendConnection(cwd: string): Promise<SearchBackendCon
   };
 }
 
-const PROMPT_VARIANTS: PiSearchPromptVariant[] = ["plain_minimal"];
+const PROMPT_VARIANTS: PiSearchPromptVariant[] = ["plain_minimal", "trec_rag"];
 function parsePositiveInteger(value: string | undefined, label: string, fallback: number): number {
   const raw = value?.trim();
   if (!raw) return fallback;
@@ -363,12 +375,30 @@ function parseArgs(argv: string[]) {
   }
 
   const outputModes = parsePiSearchOutputModes(out.outputMode);
+  const trecRagTeamId = out.trecRagTeamId ?? process.env.TREC_RAG_TEAM_ID?.trim();
+  const trecRagRunId = out.trecRagRunId ?? process.env.TREC_RAG_RUN_ID?.trim();
+  const trecRagRunDesc = out.trecRagRunDesc ?? process.env.TREC_RAG_RUN_DESC?.trim();
+  if (
+    piSearchPromptVariant === "trec_rag" &&
+    (outputModes.length !== 1 || !hasPiSearchOutputMode(outputModes, "answer"))
+  ) {
+    throw new Error("trec_rag requires answer as its only output mode.");
+  }
+  if (
+    piSearchPromptVariant === "trec_rag" &&
+    (!trecRagTeamId || !trecRagRunId || !trecRagRunDesc)
+  ) {
+    throw new Error("trec_rag requires --trecRagTeamId, --trecRagRunId, and --trecRagRunDesc.");
+  }
   return {
     benchmarkId: benchmarkConfig.benchmark.id,
     querySetId: benchmarkConfig.querySetId,
     queryPath: resolve(benchmarkConfig.queryPath),
-    qrelsPath: resolve(benchmarkConfig.qrelsPath),
-    indexPath: resolve(benchmarkConfig.indexPath),
+    qrelsPath: benchmarkConfig.qrelsPath ? resolve(benchmarkConfig.qrelsPath) : undefined,
+    indexPath:
+      benchmarkConfig.benchmark.id === "trec-rag-2026"
+        ? benchmarkConfig.indexPath
+        : resolve(benchmarkConfig.indexPath),
     outputDir: resolve(out.outputDir),
     model: out.model,
     thinking: out.thinking,
@@ -381,6 +411,9 @@ function parseArgs(argv: string[]) {
     outputModes,
     rankedListDepth,
     rankedListCount,
+    trecRagTeamId,
+    trecRagRunId,
+    trecRagRunDesc,
     toolInterface: parsePiSearchToolInterface(out.toolInterface),
   };
 }
@@ -418,8 +451,9 @@ function formatPrompt(
   });
 }
 
-function readEvidenceQrels(path: string): EvidenceQrels {
+function readEvidenceQrels(path?: string): EvidenceQrels {
   const qrels: EvidenceQrels = new Map();
+  if (!path) return qrels;
   const text = readFileSync(path, "utf8");
   for (const [index, rawLine] of text.split(/\r?\n/).entries()) {
     const line = rawLine.trim();
@@ -1005,6 +1039,7 @@ function finalizeRun(
   exitCode: number | null,
   timedOut: boolean,
   elapsedSeconds: number,
+  trecRagMetadata?: TrecRagMetadata,
 ): BenchmarkRun {
   const finalizedResults = [...normalizedResults];
 
@@ -1019,9 +1054,25 @@ function finalizeRun(
 
   const toolCallsTotal = Object.values(state.toolCallCounts).reduce((sum, count) => sum + count, 0);
   const completionSource = state.finalAssistantText ? "assistant_text" : null;
+  let trecRagOutput: TrecRagOutput | undefined;
+  let trecRagParseError: string | undefined;
+  if (piSearchPromptVariant === "trec_rag" && state.finalAssistantText && trecRagMetadata) {
+    try {
+      trecRagOutput = buildTrecRagOutput(
+        parseTrecRagAnswerPayload(state.finalAssistantText),
+        trecRagMetadata,
+      );
+    } catch (error) {
+      trecRagParseError = error instanceof Error ? error.message : String(error);
+    }
+  }
   const status = timedOut
     ? "timeout"
-    : exitCode === 0 && state.sawAgentEnd && state.finalAssistantText
+    : exitCode === 0 &&
+        state.sawAgentEnd &&
+        state.finalAssistantText &&
+        !trecRagParseError &&
+        (piSearchPromptVariant !== "trec_rag" || trecRagOutput)
       ? "completed"
       : "failed";
   if (status !== "completed" && stderrTail.trim()) {
@@ -1033,9 +1084,13 @@ function finalizeRun(
     });
   }
 
-  const citedDocids = state.finalAssistantText
-    ? extractCitationsFromText(state.finalAssistantText)
-    : [];
+  const citedDocids = trecRagOutput
+    ? trecRagOutput.references
+    : piSearchPromptVariant === "trec_rag"
+      ? []
+      : state.finalAssistantText
+        ? extractCitationsFromText(state.finalAssistantText)
+        : [];
   const agentDocids = Array.from(new Set([...state.openedDocids, ...citedDocids]));
   const parsedRankedList =
     hasPiSearchOutputMode(outputModes, "ranked_list") && state.finalAssistantText
@@ -1081,6 +1136,8 @@ function finalizeRun(
     ranked_docids: rankedList?.docids,
     ranked_list_parse_error: rankedList?.error,
     ranked_list_count_error: rankedListCountError,
+    trec_rag_output: trecRagOutput,
+    trec_rag_parse_error: trecRagParseError,
     stats: {
       elapsed_seconds: Number(elapsedSeconds.toFixed(3)),
       assistant_turns: state.assistantTurns,
@@ -1133,7 +1190,7 @@ function buildPersistedRunSetup(args: {
   querySetId: string;
   model: string;
   queryPath: string;
-  qrelsPath: string;
+  qrelsPath?: string;
   totalQueries: number;
   timeoutSeconds: number;
   indexPath: string;
@@ -1143,6 +1200,9 @@ function buildPersistedRunSetup(args: {
   outputModes: PiSearchOutputModes;
   rankedListDepth: number;
   rankedListCount?: number;
+  trecRagTeamId?: string;
+  trecRagRunId?: string;
+  trecRagRunDesc?: string;
 }): PersistedRunSetup {
   return {
     slice: args.querySetId,
@@ -1169,6 +1229,9 @@ function buildPersistedRunSetup(args: {
       hasPiSearchOutputMode(args.outputModes, "ranked_list") && args.rankedListCount
         ? String(args.rankedListCount)
         : undefined,
+    trecRagTeamId: args.trecRagTeamId ?? resolveEnvValue("TREC_RAG_TEAM_ID"),
+    trecRagRunId: args.trecRagRunId ?? resolveEnvValue("TREC_RAG_RUN_ID"),
+    trecRagRunDesc: args.trecRagRunDesc ?? resolveEnvValue("TREC_RAG_RUN_DESC"),
   };
 }
 
@@ -1205,7 +1268,7 @@ async function main() {
   console.log(`Using benchmark=${args.benchmarkId}`);
   console.log(`Using querySet=${args.querySetId}`);
   console.log(`Using thinking level=${args.thinking}`);
-  console.log(`Using qrels=${args.qrelsPath}`);
+  console.log(`Using qrels=${args.qrelsPath ?? "none (unjudged query set)"}`);
   console.log(`Using indexPath=${args.indexPath}`);
   console.log(`Using timeoutSeconds=${args.timeoutSeconds}`);
   console.log(`Using promptVariant=${args.piSearchPromptVariant}`);
@@ -1244,6 +1307,9 @@ async function main() {
         outputModes: args.outputModes,
         rankedListDepth: args.rankedListDepth,
         rankedListCount: args.rankedListCount,
+        trecRagTeamId: args.trecRagTeamId,
+        trecRagRunId: args.trecRagRunId,
+        trecRagRunDesc: args.trecRagRunDesc,
       }),
       null,
       2,
@@ -1298,23 +1364,32 @@ async function main() {
       const stderrPath = getStderrPath(args.outputDir, queryId);
       if (existsSync(outputPath)) {
         const existingRun = JSON.parse(readFileSync(outputPath, "utf8")) as BenchmarkRun;
-        const queryRecall = updateRunningRecall(runningRecall, existingRun, qrels);
-        const running = formatRunningRecall(runningRecall);
-        console.log(
-          `[${index + 1}/${queries.length}] Skipping ${queryId}; output exists query_recall=${queryRecall.recall.toFixed(4)} (${queryRecall.hits}/${queryRecall.goldCount}) running_macro=${running.macro.toFixed(4)} running_micro=${running.micro.toFixed(4)} ${running.statusSummary}`,
-        );
-        appendBenchmarkProgressEvent({
-          ts: Date.now(),
-          runId: managedRunId,
-          type: "query_skipped",
-          payload: {
-            index: index + 1,
-            totalQueries: queries.length,
-            queryId,
-            status: existingRun.status,
-          },
-        });
-        continue;
+        const shouldRetryTrecRag =
+          args.piSearchPromptVariant === "trec_rag" &&
+          (existingRun.status !== "completed" || !existingRun.trec_rag_output);
+        if (shouldRetryTrecRag) {
+          console.log(
+            `[${index + 1}/${queries.length}] Retrying ${queryId}; existing TREC RAG artifact is incomplete or failed`,
+          );
+        } else {
+          const queryRecall = updateRunningRecall(runningRecall, existingRun, qrels);
+          const running = formatRunningRecall(runningRecall);
+          console.log(
+            `[${index + 1}/${queries.length}] Skipping ${queryId}; output exists query_recall=${queryRecall.recall.toFixed(4)} (${queryRecall.hits}/${queryRecall.goldCount}) running_macro=${running.macro.toFixed(4)} running_micro=${running.micro.toFixed(4)} ${running.statusSummary}`,
+          );
+          appendBenchmarkProgressEvent({
+            ts: Date.now(),
+            runId: managedRunId,
+            type: "query_skipped",
+            payload: {
+              index: index + 1,
+              totalQueries: queries.length,
+              queryId,
+              status: existingRun.status,
+            },
+          });
+          continue;
+        }
       }
 
       console.log(`[${index + 1}/${queries.length}] Running query ${queryId}`);
@@ -1353,6 +1428,7 @@ async function main() {
           extraEnv: {
             ...searchBackendConnection.env,
             PI_SEARCH_EXTENSION_CONFIG: JSON.stringify(searchBackendConnection.config),
+            PI_SEARCH_PROMPT_VARIANT: args.piSearchPromptVariant,
             PI_SEARCH_TOOL_INTERFACE: args.toolInterface,
           },
           rawEventsPath,
@@ -1377,6 +1453,15 @@ async function main() {
           phase.exitCode,
           phase.timedOut,
           phase.elapsedSeconds,
+          args.piSearchPromptVariant === "trec_rag"
+            ? {
+                team_id: args.trecRagTeamId as string,
+                narrative_id: queryId,
+                narrative: query,
+                run_id: args.trecRagRunId as string,
+                run_desc: args.trecRagRunDesc as string,
+              }
+            : undefined,
         );
       } catch (error) {
         const message = error instanceof Error ? (error.stack ?? error.message) : String(error);
@@ -1406,6 +1491,15 @@ async function main() {
             error.details.exitCode,
             error.details.timedOut,
             error.details.elapsedSeconds,
+            args.piSearchPromptVariant === "trec_rag"
+              ? {
+                  team_id: args.trecRagTeamId as string,
+                  narrative_id: queryId,
+                  narrative: query,
+                  run_id: args.trecRagRunId as string,
+                  run_desc: args.trecRagRunDesc as string,
+                }
+              : undefined,
           );
         } else {
           run = finalizeRun(
@@ -1427,6 +1521,15 @@ async function main() {
             null,
             false,
             (Date.now() - queryStartedAt) / 1000,
+            args.piSearchPromptVariant === "trec_rag"
+              ? {
+                  team_id: args.trecRagTeamId as string,
+                  narrative_id: queryId,
+                  narrative: query,
+                  run_id: args.trecRagRunId as string,
+                  run_desc: args.trecRagRunDesc as string,
+                }
+              : undefined,
           );
         }
       }
@@ -1464,6 +1567,19 @@ async function main() {
     console.log(
       `Wrote ranked-list TREC run file ${trecRun.outputPath} queries=${trecRun.queryCount} lines=${trecRun.lineCount}`,
     );
+  }
+  if (args.piSearchPromptVariant === "trec_rag") {
+    const written = writeTrecRagJsonlFromRunDirectory({
+      runDir: args.outputDir,
+      queries: queries.map(({ queryId, query }) => ({
+        narrativeId: queryId,
+        narrative: query,
+      })),
+      teamId: args.trecRagTeamId as string,
+      runId: args.trecRagRunId as string,
+      runDesc: args.trecRagRunDesc as string,
+    });
+    console.log(`Wrote TREC RAG JSONL ${written.outputPath} records=${written.recordCount}`);
   }
   console.log(
     `Finished ${runningRecall.processedQueries}/${queries.length} queries running_macro=${finalRunning.macro.toFixed(4)} running_micro=${finalRunning.micro.toFixed(4)} hits=${runningRecall.totalHits}/${runningRecall.totalGold} ${finalRunning.statusSummary}`,

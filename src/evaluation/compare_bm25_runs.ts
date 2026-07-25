@@ -134,7 +134,7 @@ function parseArgs(argv: string[]): Args {
   });
   args.querySetId = compareConfig.querySetId;
   args.baselineRunPath ||= compareConfig.baselineRunPath ?? "";
-  args.qrelsPath ||= compareConfig.qrelsPath;
+  args.qrelsPath ||= compareConfig.qrelsPath ?? "";
   if (args.secondaryQrelsPath === undefined) {
     args.secondaryQrelsPath = compareConfig.secondaryQrelsPath;
   }

@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 import { browsecompPlusBenchmark } from "./browsecomp_plus";
 import { msmarcoV1PassageBenchmark } from "./msmarco_v1_passage";
 import { templateBenchmark } from "./template_benchmark";
+import { trecRag2026Benchmark } from "./trec_rag_2026";
 import { buildTsxCommand } from "../runtime/tsx";
 import { loadInstalledBenchmarks } from "./installed";
 import {
@@ -26,6 +27,7 @@ const BUILTIN_BENCHMARKS: BenchmarkDefinition[] = [
   browsecompPlusBenchmark,
   msmarcoV1PassageBenchmark,
   templateBenchmark,
+  trecRag2026Benchmark,
 ];
 
 function getAllBenchmarks(): BenchmarkDefinition[] {
@@ -69,7 +71,7 @@ export type BenchmarkCatalogEntry = {
   defaultQuerySetId: string;
   defaultCompareQuerySetId?: string;
   querySetIds: string[];
-  defaultQrelsPath: string;
+  defaultQrelsPath?: string;
   defaultIndexPath: string;
   defaultCompareBaselineRunPath?: string;
   runFileRetrievalBackend: BenchmarkDefinition["retrievalEvaluation"]["runFileBackend"];
@@ -255,7 +257,7 @@ function buildBenchmarkManifestInputHashes(
 ): BenchmarkManifestInputHashes {
   return {
     query: hashBenchmarkInputFile(config.queryPath),
-    qrels: hashBenchmarkInputFile(config.qrelsPath),
+    ...(config.qrelsPath ? { qrels: hashBenchmarkInputFile(config.qrelsPath) } : {}),
     ...(config.secondaryQrelsPath
       ? { secondary_qrels: hashBenchmarkInputFile(config.secondaryQrelsPath) }
       : {}),

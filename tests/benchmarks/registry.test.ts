@@ -192,7 +192,7 @@ void test("manifest snapshots capture benchmark identity and resolved paths", ()
   assert.equal(snapshot.git_commit_short, "123456");
   assert.ok(snapshot.input_hashes);
   assert.equal(typeof snapshot.input_hashes?.query.exists, "boolean");
-  assert.equal(typeof snapshot.input_hashes?.qrels.exists, "boolean");
+  assert.equal(typeof snapshot.input_hashes?.qrels?.exists, "boolean");
   assert.equal(typeof snapshot.input_hashes?.secondary_qrels?.exists, "boolean");
   assert.equal(typeof snapshot.input_hashes?.ground_truth?.exists, "boolean");
 });
@@ -359,6 +359,25 @@ void test("registry includes its packaged benchmarks alongside installed benchma
   });
   assert.equal(msmarcoDevResolved.queryPath, "data/msmarco-v1-passage/queries/dev.tsv");
   assert.equal(msmarcoDevResolved.qrelsPath, "data/msmarco-v1-passage/qrels/qrels.dev-passage.txt");
+});
+
+void test("registry exposes the unjudged TREC RAG 2026 test collection", () => {
+  const config = resolveBenchmarkConfig({ benchmarkId: "trec-rag-2026" });
+  assert.equal(config.querySetId, "test");
+  assert.equal(config.benchmark.piSearchPromptVariant, "trec_rag");
+  assert.equal(config.indexPath, "climbmix-400b");
+  assert.equal(config.qrelsPath, undefined);
+  assert.equal(config.benchmark.retrievalEvaluation.runFileBackend, "none");
+  assert.equal(config.benchmark.retrievalEvaluation.runDirBackend, "none");
+  assert.equal(config.benchmark.source?.kind, "github-file");
+  assert.equal(
+    config.benchmark.source?.kind === "github-file" ? config.benchmark.source.revision : undefined,
+    "1de1b22ac7f9936be7e42c9e70d576cc9cb83770",
+  );
+  assert.equal(
+    config.benchmark.source?.kind === "github-file" ? config.benchmark.source.sha256 : undefined,
+    "72dc2fd358d3eeda973397ccd7a8775545b19a6deaefc67709167eee6a9f8a2c",
+  );
 });
 
 void test("registry resolves benchmark-specific internal retrieval semantics", () => {

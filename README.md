@@ -39,6 +39,7 @@ BrowseComp-Plus remains the default benchmark for reproducibility, but the same 
 - `browsecomp-plus` — default packaged benchmark with query sets `q9`, `q100`, `q300`, and `qfull`
 - `msmarco-v1-passage` — index-driven MS MARCO v1 passage benchmark with query sets `dl19` and `dl20`
 - `benchmark-template` — tiny local end-to-end demo benchmark for development and validation
+- `trec-rag-2026` — official 119-narrative, unjudged TREC RAG 2026 test set using ClimbMix-400b
 
 To inspect the registered benchmark catalog from the CLI:
 
@@ -120,6 +121,12 @@ Tiny local demo benchmark:
 
 ```bash
 npm run setup:benchmark -- --benchmark benchmark-template
+```
+
+TREC RAG 2026 narratives:
+
+```bash
+npm run setup:benchmark -- --benchmark trec-rag-2026
 ```
 
 ### 2. Run a benchmark query set
@@ -219,6 +226,41 @@ npx tsx src/evaluation/eval_retrieval_trec_eval.ts \
 
 The reproducible MS MARCO comparison protocol and recorded GPT-5.5 results are tracked in
 [`docs/msmarco-v1-passage-ranked-list-results.md`](docs/msmarco-v1-passage-ranked-list-results.md).
+
+### TREC RAG 2026 answer output
+
+The `trec-rag-2026` benchmark selects its evidence-grounded prompt automatically. It requires
+official run metadata and writes `rag_output_trec_rag_2026.jsonl`. The released test set has no
+public qrels, so retrieval summarization and evaluation are disabled. Piika accepts both citation
+representations allowed by the current TREC RAG contract—zero-based reference positions and direct
+ClimbMix document IDs—and emits direct document-ID citations in consolidated submissions.
+
+```bash
+PYSERINI_REST_BASE_URL=http://api.castorini.uwaterloo.ca \
+PYSERINI_REST_INDEX=climbmix-400b \
+TREC_RAG_TEAM_ID=castorini \
+TREC_RAG_RUN_ID=piika-example \
+TREC_RAG_RUN_DESC='Piika agentic ClimbMix run.' \
+MODEL=openai-codex/gpt-5.6-sol \
+THINKING=medium \
+OUTPUT_MODE=answer \
+npm run run:benchmark:query-set:sharded-shared-bm25 -- \
+  --benchmark trec-rag-2026 \
+  --query-set test \
+  --shard-count 8 \
+  --no-auto-summarize-on-merge \
+  --no-auto-evaluate-on-merge
+```
+
+Supply `PYSERINI_API_TOKEN` through a secure ignored local environment file. Validate a completed
+artifact with:
+
+```bash
+npx tsx src/evaluation/validate_trec_rag_output.ts \
+  --queries data/trec-rag-2026/queries/trec_rag_2026_queries.tsv \
+  --input runs/<run>/merged/rag_output_trec_rag_2026.jsonl \
+  --expected-count 119
+```
 
 ### Composing answer and ranked-list outputs
 

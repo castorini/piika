@@ -60,3 +60,30 @@ void test("three-tool workflow remains an explicit opt-in", () => {
   assert.match(prompt, /Browse the current ranking with read_search_results/);
   assert.match(prompt, /offset=1/);
 });
+
+void test("trec_rag requests evidence-grounded JSON without model-generated metadata", () => {
+  const prompt = formatPiSearchPrompt("alpha narrative", "trec_rag", {
+    outputMode: "answer",
+  });
+
+  assert.match(prompt, /at most 1,024 words/);
+  assert.match(prompt, /"references": \[/);
+  assert.match(prompt, /"citations": \["<raw ClimbMix document id>"\]/);
+  assert.match(prompt, /Do not include metadata/);
+  assert.match(prompt, /Narrative: alpha narrative/);
+  assert.doesNotMatch(prompt, /"team_id"/);
+});
+
+void test("trec_rag rejects non-answer and composed output modes", () => {
+  assert.throws(
+    () => formatPiSearchPrompt("alpha", "trec_rag", { outputMode: "ranked_list" }),
+    /requires answer as its only output mode/,
+  );
+  assert.throws(
+    () =>
+      formatPiSearchPrompt("alpha", "trec_rag", {
+        outputModes: ["answer", "ranked_list"],
+      }),
+    /requires answer as its only output mode/,
+  );
+});

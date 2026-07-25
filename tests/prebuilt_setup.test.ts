@@ -169,7 +169,7 @@ void test("prebuilt setup writes a dynamically loadable benchmark manifest", asy
     const resolved = resolveBenchmarkConfig({ benchmarkId: plan.benchmarkId });
     assert.equal(resolved.querySetId, "example-test");
     assert.match(resolved.queryPath, /queries\.tsv$/);
-    assert.match(resolved.qrelsPath, /qrels\.txt$/);
+    assert.match(resolved.qrelsPath ?? "", /qrels\.txt$/);
 
     const conflictingManifest = JSON.parse(readFileSync(plan.manifestPath, "utf8")) as {
       aliases: string[];

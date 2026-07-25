@@ -40,6 +40,10 @@ void test("prepareIsolatedAgentDir creates temp agent state outside artifact roo
     encoding: "utf8",
     flag: "wx",
   });
+  writeFileSync(join(sourceAgentDir, "models-store.json"), '{"provider":"catalog"}\n', {
+    encoding: "utf8",
+    flag: "wx",
+  });
 
   const isolatedAgentDir = prepareIsolatedAgentDir(artifactRoot, {
     env: { PI_CODING_AGENT_DIR: sourceAgentDir },
@@ -50,6 +54,7 @@ void test("prepareIsolatedAgentDir creates temp agent state outside artifact roo
   assert.ok(!isolatedAgentDir.startsWith(`${resolve(artifactRoot)}/`));
   assert.ok(existsSync(join(isolatedAgentDir, "auth.json")));
   assert.ok(existsSync(join(isolatedAgentDir, "models.json")));
+  assert.ok(existsSync(join(isolatedAgentDir, "models-store.json")));
   assert.ok(!existsSync(join(isolatedAgentDir, "oauth.json")));
   assert.ok(!existsSync(join(artifactRoot, ".pi-agent-isolated")));
 });
