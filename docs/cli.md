@@ -123,6 +123,7 @@ Set up benchmark assets with:
 piika setup benchmark-template
 piika setup browsecomp-plus
 piika setup msmarco-v1-passage
+piika setup trec-rag-2026
 ```
 
 Select a non-default setup step with `--step`:
@@ -220,6 +221,13 @@ piika run \
 ```
 
 `--shards` is accepted as a CLI alias for the lower-level `--shard-count` flag.
+
+For TREC RAG 2026, the sharded launcher uses the configured Pyserini REST backend instead of
+starting a local BM25 daemon. Pass `--team-id`, `--run-id`, and `--run-desc` (or the corresponding
+`TREC_RAG_*` environment variables) to populate official output metadata. The benchmark writes
+`rag_output_trec_rag_2026.jsonl` with direct ClimbMix document-ID citations and rejects incomplete
+or structurally invalid merged runs. Validation also accepts the official zero-based citation form,
+participant-defined metadata fields, and uncited retrieved references.
 
 ### Managed presets
 

@@ -164,7 +164,8 @@ export function resolveWrapperQrels(options: {
     runPath: options.runPath,
   });
   const qrelsWasSet = options.qrelsPath !== undefined || hasEnv(qrelsEnvName);
-  const qrelsPath = options.qrelsPath ?? readEnv(qrelsEnvName) ?? context.benchmarkConfig.qrelsPath;
+  const qrelsPath =
+    options.qrelsPath ?? readEnv(qrelsEnvName) ?? context.benchmarkConfig.qrelsPath ?? "";
   const secondaryQrelsWasSet =
     Boolean(options.secondaryQrelsDisabled) ||
     options.secondaryQrelsPath !== undefined ||
@@ -220,7 +221,10 @@ export function resolveJudgeWrapperInputs(options: {
     context.benchmarkConfig.groundTruthPath ??
     "";
   const qrelEvidencePath =
-    options.qrelEvidencePath ?? readEnv(qrelEvidenceEnvName) ?? context.benchmarkConfig.qrelsPath;
+    options.qrelEvidencePath ??
+    readEnv(qrelEvidenceEnvName) ??
+    context.benchmarkConfig.qrelsPath ??
+    "";
 
   return {
     ...context,

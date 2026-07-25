@@ -278,3 +278,39 @@ void test("pyserini-rest adapter surfaces non-2xx search responses as execution 
     await close(server);
   }
 });
+
+void test("pyserini-rest adapter retries transient overload responses", async () => {
+  let requestCount = 0;
+  const server = createServer((_request, response) => {
+    requestCount += 1;
+    response.setHeader("content-type", "application/json");
+    if (requestCount === 1) {
+      response.statusCode = 429;
+      response.setHeader("retry-after", "0");
+      response.end(JSON.stringify({ error: "temporarily overloaded" }));
+      return;
+    }
+    response.end(
+      JSON.stringify({
+        candidates: [{ docid: "recovered-doc", score: 1, doc: "Recovered result." }],
+      }),
+    );
+  });
+
+  const port = await listen(server);
+  try {
+    const backend = createPiSearchBackend(
+      process.cwd(),
+      buildPyseriniRestExtensionConfig({
+        baseUrl: `http://127.0.0.1:${port}`,
+        index: "climbmix-400b",
+      }),
+    );
+
+    const result = await backend.search({ query: "retry", limit: 1 });
+    assert.equal(requestCount, 2);
+    assert.equal(result.hits[0]?.docid, "recovered-doc");
+  } finally {
+    await close(server);
+  }
+});

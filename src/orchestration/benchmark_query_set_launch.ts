@@ -35,6 +35,9 @@ export type BenchmarkQuerySetLaunchArgs = {
   toolInterface?: string;
   rankedListDepth?: number;
   rankedListCount?: number;
+  trecRagTeamId?: string;
+  trecRagRunId?: string;
+  trecRagRunDesc?: string;
 };
 
 export type BenchmarkQuerySetLaunchPlan = {
@@ -48,13 +51,16 @@ export type BenchmarkQuerySetLaunchPlan = {
   piBin: string;
   extensionPath: string;
   queryPath: string;
-  qrelsPath: string;
+  qrelsPath?: string;
   indexPath: string;
   outputMode: string;
   outputModes: PiSearchOutputModes;
   toolInterface: PiSearchToolInterface;
   rankedListDepth: number;
   rankedListCount?: number;
+  trecRagTeamId?: string;
+  trecRagRunId?: string;
+  trecRagRunDesc?: string;
 };
 
 export function readEnv(name: string): string | undefined {
@@ -161,6 +167,15 @@ export function resolveBenchmarkQuerySetLaunchPlan(
   const toolInterface = parsePiSearchToolInterface(
     args.toolInterface ?? readEnv("PI_SEARCH_TOOL_INTERFACE") ?? DEFAULT_PI_SEARCH_TOOL_INTERFACE,
   );
+  const trecRagTeamId = args.trecRagTeamId ?? readEnv("TREC_RAG_TEAM_ID");
+  const trecRagRunId = args.trecRagRunId ?? readEnv("TREC_RAG_RUN_ID");
+  const trecRagRunDesc = args.trecRagRunDesc ?? readEnv("TREC_RAG_RUN_DESC");
+  if (
+    piSearchPromptVariant === "trec_rag" &&
+    (!trecRagTeamId || !trecRagRunId || !trecRagRunDesc)
+  ) {
+    throw new Error("trec_rag requires TREC_RAG_TEAM_ID, TREC_RAG_RUN_ID, and TREC_RAG_RUN_DESC.");
+  }
 
   return {
     benchmarkId: benchmark.id,
@@ -187,6 +202,9 @@ export function resolveBenchmarkQuerySetLaunchPlan(
     toolInterface,
     rankedListDepth,
     rankedListCount,
+    trecRagTeamId,
+    trecRagRunId,
+    trecRagRunDesc,
   };
 }
 
@@ -214,6 +232,9 @@ export function buildBenchmarkQuerySetLaunchEnv(
     OUTPUT_MODE: plan.outputMode,
     RANKED_LIST_DEPTH: String(plan.rankedListDepth),
     RANKED_LIST_COUNT: plan.rankedListCount ? String(plan.rankedListCount) : undefined,
+    TREC_RAG_TEAM_ID: plan.trecRagTeamId,
+    TREC_RAG_RUN_ID: plan.trecRagRunId,
+    TREC_RAG_RUN_DESC: plan.trecRagRunDesc,
   };
 }
 
@@ -225,8 +246,7 @@ export function buildRunPiBenchmarkCommand(plan: BenchmarkQuerySetLaunchPlan): s
     plan.querySetId,
     "--query",
     plan.queryPath,
-    "--qrels",
-    plan.qrelsPath,
+    ...(plan.qrelsPath ? ["--qrels", plan.qrelsPath] : []),
     "--outputDir",
     plan.outputDir,
     "--model",
@@ -246,6 +266,9 @@ export function buildRunPiBenchmarkCommand(plan: BenchmarkQuerySetLaunchPlan): s
     "--rankedListDepth",
     String(plan.rankedListDepth),
     ...(plan.rankedListCount ? ["--rankedListCount", String(plan.rankedListCount)] : []),
+    ...(plan.trecRagTeamId ? ["--trecRagTeamId", plan.trecRagTeamId] : []),
+    ...(plan.trecRagRunId ? ["--trecRagRunId", plan.trecRagRunId] : []),
+    ...(plan.trecRagRunDesc ? ["--trecRagRunDesc", plan.trecRagRunDesc] : []),
   ]);
 }
 
@@ -263,7 +286,7 @@ export function printBenchmarkQuerySetLaunchPlan(plan: BenchmarkQuerySetLaunchPl
   }
   console.log(`MODEL=${plan.model}`);
   console.log(`QUERY_FILE=${plan.queryPath}`);
-  console.log(`QRELS_FILE=${plan.qrelsPath}`);
+  console.log(`QRELS_FILE=${plan.qrelsPath ?? ""}`);
   console.log(`OUTPUT_DIR=${plan.outputDir}`);
   console.log(`TIMEOUT_SECONDS=${plan.timeoutSeconds}`);
   console.log(`INDEX_PATH=${plan.indexPath}`);

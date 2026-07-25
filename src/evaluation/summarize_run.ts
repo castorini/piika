@@ -118,13 +118,13 @@ function parseArgs(argv: string[]): Args {
   const manifest = detectBenchmarkManifestSnapshot(args.runDir);
   if (manifest) {
     args.benchmarkId = manifest.snapshot.benchmark_id;
-    args.qrelsPath ||= manifest.snapshot.qrels_path;
+    args.qrelsPath ||= manifest.snapshot.qrels_path ?? "";
     if (args.secondaryQrelsPath === undefined) {
       args.secondaryQrelsPath = manifest.snapshot.secondary_qrels_path;
     }
   }
   const benchmarkConfig = resolveBenchmarkConfig({ benchmarkId: args.benchmarkId });
-  args.qrelsPath ||= benchmarkConfig.qrelsPath;
+  args.qrelsPath ||= benchmarkConfig.qrelsPath ?? "";
   if (!manifest && args.secondaryQrelsPath === undefined) {
     args.secondaryQrelsPath = benchmarkConfig.secondaryQrelsPath;
   }

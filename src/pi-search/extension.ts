@@ -4,8 +4,8 @@ import {
   BENCHMARK_TIMEOUT_SECONDS,
   dumpPromptSnapshot,
   getSubmitNowDelayMs,
+  getSubmitNowSteerMessage,
   stripBenchmarkIrrelevantSystemPromptSections,
-  SUBMIT_NOW_STEER_MESSAGE,
   SUBMIT_NOW_TRIGGER_RATIO,
 } from "./prompt_policy";
 import {
@@ -62,6 +62,7 @@ export function registerPiSearchExtension(
   const spillDir = new ManagedTempSpillDir(options.spillDirPrefix ?? "pi-search-extension-");
   const toolInterface = resolveToolInterface(options);
   const submitNowDelayMs = getSubmitNowDelayMs();
+  const submitNowSteerMessage = getSubmitNowSteerMessage(process.env.PI_SEARCH_PROMPT_VARIANT);
   let spillSequence = 0;
   let submitNowTimer: ReturnType<typeof setTimeout> | null = null;
   let submitNowMode = false;
@@ -133,7 +134,7 @@ export function registerPiSearchExtension(
         console.error(
           `[pi-search] Time budget threshold reached at ${(submitNowDelayMs / 1000).toFixed(1)}s (${Math.round(SUBMIT_NOW_TRIGGER_RATIO * 100)}% of TIMEOUT_SECONDS=${BENCHMARK_TIMEOUT_SECONDS}); queueing submit-now steer and blocking further retrieval tools.`,
         );
-        pi.sendUserMessage(SUBMIT_NOW_STEER_MESSAGE, { deliverAs: "steer" });
+        pi.sendUserMessage(submitNowSteerMessage, { deliverAs: "steer" });
       } catch (error) {
         console.error(
           `[pi-search] Failed to queue submit-now steer: ${error instanceof Error ? error.message : String(error)}`,

@@ -35,6 +35,9 @@ type PyseriniDocResponse = {
 };
 
 const DEFAULT_SEARCH_MAX_DOC_LENGTH = 500;
+const MAX_FETCH_ATTEMPTS = 5;
+const MAX_RETRY_DELAY_MS = 15_000;
+const RETRYABLE_HTTP_STATUSES = new Set([429, 502, 503, 504]);
 
 function normalizeBaseUrl(baseUrl: string): string {
   return baseUrl.replace(/\/+$/, "");
@@ -51,6 +54,40 @@ function getAuthHeaders(config: PyseriniRestBackendConfig): Record<string, strin
   const tokenEnv = config.tokenEnv?.trim();
   const token = tokenEnv ? process.env[tokenEnv]?.trim() : undefined;
   return token ? { authorization: `Bearer ${token}` } : {};
+}
+
+function getRetryDelayMs(response: Response, failedAttempt: number): number {
+  const retryAfter = response.headers.get("retry-after")?.trim();
+  if (retryAfter) {
+    const seconds = Number(retryAfter);
+    if (Number.isFinite(seconds) && seconds >= 0) {
+      return Math.min(seconds * 1_000, MAX_RETRY_DELAY_MS);
+    }
+    const retryAt = Date.parse(retryAfter);
+    if (Number.isFinite(retryAt)) {
+      return Math.min(Math.max(retryAt - Date.now(), 0), MAX_RETRY_DELAY_MS);
+    }
+  }
+  const exponentialDelay = 1_000 * 2 ** failedAttempt;
+  const jitter = Math.floor(Math.random() * 250);
+  return Math.min(exponentialDelay + jitter, MAX_RETRY_DELAY_MS);
+}
+
+function waitForRetry(delayMs: number, signal?: AbortSignal): Promise<void> {
+  if (signal?.aborted) {
+    return Promise.reject(signal.reason ?? new Error("Request aborted"));
+  }
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      signal?.removeEventListener("abort", handleAbort);
+      resolve();
+    }, delayMs);
+    const handleAbort = () => {
+      clearTimeout(timeout);
+      reject(signal?.reason ?? new Error("Request aborted"));
+    };
+    signal?.addEventListener("abort", handleAbort, { once: true });
+  });
 }
 
 function stringifyDocValue(value: unknown): string | undefined {
@@ -256,38 +293,56 @@ export class PyseriniRestSearchBackend implements PiSearchBackend {
     signal?: AbortSignal,
     options: { notFoundAsUndefined?: boolean } = {},
   ): Promise<unknown> {
-    let response: Response;
-    try {
-      response = await fetch(url, {
-        headers: getAuthHeaders(this.config),
-        signal,
-      });
-    } catch (error) {
-      throw new PiSearchBackendUnavailableError(
-        this.capabilities.backendId,
-        error instanceof Error ? error.message : String(error),
-      );
-    }
+    for (let attempt = 0; attempt < MAX_FETCH_ATTEMPTS; attempt += 1) {
+      let response: Response;
+      try {
+        response = await fetch(url, {
+          headers: getAuthHeaders(this.config),
+          signal,
+        });
+      } catch (error) {
+        if (attempt + 1 < MAX_FETCH_ATTEMPTS && !signal?.aborted) {
+          await waitForRetry(Math.min(1_000 * 2 ** attempt, MAX_RETRY_DELAY_MS), signal);
+          continue;
+        }
+        throw new PiSearchBackendUnavailableError(
+          this.capabilities.backendId,
+          error instanceof Error ? error.message : String(error),
+        );
+      }
 
-    const text = await response.text();
-    if (response.status === 404 && options.notFoundAsUndefined) {
-      return undefined;
+      const text = await response.text();
+      if (
+        RETRYABLE_HTTP_STATUSES.has(response.status) &&
+        attempt + 1 < MAX_FETCH_ATTEMPTS &&
+        !signal?.aborted
+      ) {
+        await waitForRetry(getRetryDelayMs(response, attempt), signal);
+        continue;
+      }
+      if (response.status === 404 && options.notFoundAsUndefined) {
+        return undefined;
+      }
+      if (!response.ok) {
+        throw new PiSearchBackendExecutionError(
+          this.capabilities.backendId,
+          operation,
+          `HTTP ${response.status}: ${text}`,
+        );
+      }
+      try {
+        return JSON.parse(text);
+      } catch (error) {
+        throw new PiSearchBackendExecutionError(
+          this.capabilities.backendId,
+          operation,
+          `Invalid JSON response: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
     }
-    if (!response.ok) {
-      throw new PiSearchBackendExecutionError(
-        this.capabilities.backendId,
-        operation,
-        `HTTP ${response.status}: ${text}`,
-      );
-    }
-    try {
-      return JSON.parse(text);
-    } catch (error) {
-      throw new PiSearchBackendExecutionError(
-        this.capabilities.backendId,
-        operation,
-        `Invalid JSON response: ${error instanceof Error ? error.message : String(error)}`,
-      );
-    }
+    throw new PiSearchBackendUnavailableError(
+      this.capabilities.backendId,
+      `${operation} exhausted ${MAX_FETCH_ATTEMPTS} attempts`,
+    );
   }
 }

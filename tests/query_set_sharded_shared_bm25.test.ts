@@ -203,3 +203,98 @@ void test("mergeShardOutputs writes merged ranked-list TREC run file", () => {
     "q1 Q0 d2 1 2 pi-agent\nq1 Q0 d1 2 1 pi-agent\nq2 Q0 d3 1 1 pi-agent\n",
   );
 });
+
+void test("mergeShardOutputs writes validated TREC RAG JSONL in narrative order", () => {
+  const root = mkdtempSync(join(tmpdir(), "sharded-merge-trec-rag-"));
+  const queryPath = join(root, "queries.tsv");
+  const shardOutputRoot = join(root, "shard-runs");
+  const mergedOutputDir = join(root, "merged");
+  const narratives = [
+    ["rag2026-0", "First narrative."],
+    ["rag2026-1", "Second narrative."],
+  ] as const;
+  writeFileSync(
+    queryPath,
+    `${narratives.map(([id, narrative]) => `${id}\t${narrative}`).join("\n")}\n`,
+    "utf8",
+  );
+  for (const [index, [id, narrative]] of narratives.entries()) {
+    const shardName = `shard_0${index + 1}`;
+    mkdirSync(join(shardOutputRoot, shardName), { recursive: true });
+    writeFileSync(
+      join(shardOutputRoot, shardName, `${id}.json`),
+      `${JSON.stringify({
+        query_id: id,
+        status: "completed",
+        trec_rag_output: {
+          metadata: {
+            team_id: "castorini",
+            narrative_id: id,
+            narrative,
+            run_id: "piika-test",
+            run_desc: "Test run.",
+          },
+          references: [`shard_0000${index + 1}_1`],
+          answer: [{ text: `Answer ${index + 1}.`, citations: [0] }],
+        },
+      })}\n`,
+      "utf8",
+    );
+  }
+
+  mergeShardOutputs(
+    {
+      benchmarkId: "trec-rag-2026",
+      backendKind: "pyserini-rest",
+      querySetId: "test",
+      model: "openai-codex/gpt-5.6-sol",
+      piSearchPromptVariant: "trec_rag",
+      outputMode: "answer",
+      outputModes: ["answer"],
+      toolInterface: "pyserini-rest-2tool",
+      rankedListDepth: 1000,
+      outputDir: root,
+      timeoutSeconds: 900,
+      thinking: "medium",
+      piBin: "pi",
+      extensionPath: "src/extensions/pi_search.ts",
+      queryPath,
+      indexPath: "climbmix-400b",
+      trecRagTeamId: "castorini",
+      trecRagRunId: "piika-test",
+      trecRagRunDesc: "Test run.",
+      shardCount: 2,
+      host: "127.0.0.1",
+      port: 12345,
+      outputRoot: root,
+      logDir: join(root, "logs"),
+      bm25LogPath: join(root, "logs", "bm25.log"),
+      shardQueryDir: join(root, "shard-queries"),
+      shardOutputRoot,
+      mergedOutputDir,
+      controlDir: join(root, "control"),
+      retryRequestPath: join(root, "control", "retry-request.json"),
+      retryApprovalPath: join(root, "control", "retry-approval.json"),
+      autoSummarizeOnMerge: false,
+      autoEvaluateOnMerge: false,
+      evaluateForce: false,
+      evaluateLimit: 0,
+      maxShardAttempts: 2,
+      shardRetryMode: "auto",
+      modelTag: "gpt56sol",
+      runStamp: "20260725_000000",
+      resolvedIndexPath: "climbmix-400b",
+    },
+    ["shard_01", "shard_02"],
+    2,
+  );
+
+  const lines = readFileSync(join(mergedOutputDir, "rag_output_trec_rag_2026.jsonl"), "utf8")
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line) as { metadata: { narrative_id: string } });
+  assert.deepEqual(
+    lines.map((line) => line.metadata.narrative_id),
+    ["rag2026-0", "rag2026-1"],
+  );
+});

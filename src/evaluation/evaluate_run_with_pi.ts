@@ -244,7 +244,7 @@ function parseArgs(argv: string[]): Args {
   if (manifest) {
     args.benchmarkId = manifest.snapshot.benchmark_id;
     args.groundTruthPath ||= manifest.snapshot.ground_truth_path ?? "";
-    args.qrelEvidencePath ||= manifest.snapshot.qrels_path;
+    args.qrelEvidencePath ||= manifest.snapshot.qrels_path ?? "";
   }
   const benchmarkConfig = resolveBenchmarkConfig({ benchmarkId: args.benchmarkId });
   const judgeEvaluation = resolveBenchmarkJudgeEvaluation({
@@ -261,7 +261,7 @@ function parseArgs(argv: string[]): Args {
   if (!manifest && args.judgeMode === "gold-answer") {
     args.groundTruthPath ||= benchmarkConfig.groundTruthPath ?? "";
   }
-  args.qrelEvidencePath ||= benchmarkConfig.qrelsPath;
+  args.qrelEvidencePath ||= benchmarkConfig.qrelsPath ?? "";
   if (args.judgeMode === "gold-answer" && !args.groundTruthPath) {
     throw new Error(
       `Judge evaluation in gold-answer mode is not configured by default for benchmark ${args.benchmarkId}. Pass --groundTruth <path> to opt in explicitly or use --judge-mode reference-free.`,

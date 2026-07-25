@@ -100,6 +100,9 @@ function main(): void {
     command.push("--queries", benchmarkConfig.queryPath);
   }
   if (!hasAnyFlag(argv, ["--qrels"])) {
+    if (!benchmarkConfig.qrelsPath) {
+      throw new Error(`Benchmark ${benchmarkConfig.benchmark.id} has no qrels.`);
+    }
     command.push("--qrels", benchmarkConfig.qrelsPath);
   }
   if (

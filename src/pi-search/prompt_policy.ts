@@ -13,6 +13,21 @@ export const SUBMIT_NOW_STEER_MESSAGE = [
   "Confidence: {your confidence score between 0% and 100%}",
 ].join("\n");
 
+export const TREC_RAG_SUBMIT_NOW_STEER_MESSAGE = [
+  "Time budget is nearly exhausted.",
+  "Further retrieval is now blocked to preserve time for submission.",
+  "Stop using tools immediately and return your best valid TREC RAG JSON answer now.",
+  "Use exactly the JSON shape requested in the original narrative prompt.",
+  "Keep the answer safely below 1,024 words and verify every citation document ID exists in references.",
+  "Do not include a code fence or commentary outside the JSON.",
+].join("\n");
+
+export function getSubmitNowSteerMessage(promptVariant?: string): string {
+  return promptVariant === "trec_rag"
+    ? TREC_RAG_SUBMIT_NOW_STEER_MESSAGE
+    : SUBMIT_NOW_STEER_MESSAGE;
+}
+
 function stripSection(systemPrompt: string, header: string, endMarkers: string[]): string {
   const start = systemPrompt.indexOf(header);
   if (start === -1) {

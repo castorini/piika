@@ -114,6 +114,9 @@ function main(): void {
       `Benchmark ${benchmarkConfig.benchmark.id} is not configured for trec_eval run-file evaluation.`,
     );
   }
+  if (!benchmarkConfig.qrelsPath) {
+    throw new Error(`Benchmark ${benchmarkConfig.benchmark.id} has no qrels.`);
+  }
 
   validateTrecEvalInputs({
     anseriniJarPath: args.anseriniJarPath,

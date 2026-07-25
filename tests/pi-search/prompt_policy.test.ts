@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { dumpPromptSnapshot } from "../../src/pi-search/prompt_policy";
+import { dumpPromptSnapshot, getSubmitNowSteerMessage } from "../../src/pi-search/prompt_policy";
 
 function withEnv(overrides: Record<string, string | undefined>, fn: () => void): void {
   const previous = new Map<string, string | undefined>();
@@ -81,4 +81,10 @@ void test("dumpPromptSnapshot ignores the stale BM25-branded env name", () => {
   } finally {
     rmSync(outputDir, { recursive: true, force: true });
   }
+});
+
+void test("trec_rag submit-now steering preserves the JSON contract", () => {
+  assert.match(getSubmitNowSteerMessage("plain_minimal"), /Exact Answer:/);
+  assert.match(getSubmitNowSteerMessage("trec_rag"), /valid TREC RAG JSON/);
+  assert.doesNotMatch(getSubmitNowSteerMessage("trec_rag"), /Exact Answer:/);
 });

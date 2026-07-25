@@ -113,3 +113,27 @@ void test("benchmark launch composes answer and ranked-list outputs", () => {
   assert.equal(env.OUTPUT_MODE, "answer+ranked_list");
   assert.equal(env.RANKED_LIST_DEPTH, "25");
 });
+
+void test("TREC RAG launch carries official metadata and no qrels", () => {
+  const plan = resolveBenchmarkQuerySetLaunchPlan({
+    benchmarkId: "trec-rag-2026",
+    trecRagTeamId: "castorini",
+    trecRagRunId: "piika-test",
+    trecRagRunDesc: "Test run.",
+  });
+  const env = buildBenchmarkQuerySetLaunchEnv(plan, {});
+
+  assert.equal(plan.piSearchPromptVariant, "trec_rag");
+  assert.equal(plan.qrelsPath, undefined);
+  assert.equal(env.QRELS_FILE, undefined);
+  assert.equal(env.TREC_RAG_TEAM_ID, "castorini");
+  assert.equal(env.TREC_RAG_RUN_ID, "piika-test");
+  assert.equal(env.TREC_RAG_RUN_DESC, "Test run.");
+});
+
+void test("TREC RAG launch rejects missing official metadata", () => {
+  assert.throws(
+    () => resolveBenchmarkQuerySetLaunchPlan({ benchmarkId: "trec-rag-2026" }),
+    /requires TREC_RAG_TEAM_ID/,
+  );
+});

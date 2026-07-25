@@ -303,7 +303,7 @@ export function parseArgs(argv: string[]): Args {
     benchmarkId: benchmarkConfig.benchmark.id,
     querySetId: benchmarkConfig.querySetId,
     queriesPath: queriesPath ?? benchmarkConfig.queryPath,
-    qrelsPath: qrelsPath ?? benchmarkConfig.qrelsPath,
+    qrelsPath: qrelsPath ?? benchmarkConfig.qrelsPath ?? "",
     secondaryQrelsPath: secondaryQrelsExplicit
       ? secondaryQrelsPath
       : benchmarkConfig.secondaryQrelsPath,

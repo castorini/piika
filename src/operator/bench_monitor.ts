@@ -161,9 +161,10 @@ type LogDirInfo = {
   initMs?: number;
 };
 
-const DEFAULT_QRELS_PATH = resolveBenchmarkConfig({
-  benchmarkId: getDefaultBenchmarkId(),
-}).qrelsPath;
+const DEFAULT_QRELS_PATH =
+  resolveBenchmarkConfig({
+    benchmarkId: getDefaultBenchmarkId(),
+  }).qrelsPath ?? "";
 const DEFAULT_SECONDARY_QRELS_PATH =
   resolveBenchmarkConfig({ benchmarkId: getDefaultBenchmarkId() }).secondaryQrelsPath ?? "";
 const RUN_DIR_PATTERN = /^pi_bm25/;

@@ -217,6 +217,9 @@ function runBenchmark(args) {
       { names: ["--timeout-seconds", "--timeoutSeconds"], env: "TIMEOUT_SECONDS" },
       { names: ["--thinking"], env: "THINKING" },
       { names: ["--pi"], env: "PI_BIN" },
+      { names: ["--team-id", "--trec-rag-team-id"], env: "TREC_RAG_TEAM_ID" },
+      { names: ["--run-id", "--trec-rag-run-id"], env: "TREC_RAG_RUN_ID" },
+      { names: ["--run-desc", "--trec-rag-run-desc"], env: "TREC_RAG_RUN_DESC" },
     ]);
     runTs("src/orchestration/query_set_shared_bm25.ts", lifted.args, lifted.env);
   }

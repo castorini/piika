@@ -6,6 +6,7 @@ const ISOLATED_AGENT_FILENAMES = [
   "auth.json",
   "oauth.json",
   "models.json",
+  "models-store.json",
   "settings.json",
 ] as const;
 

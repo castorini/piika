@@ -14,6 +14,8 @@ const SUBMIT_NOW_REMINDER = `If you later receive a user steer telling you to su
 
 const BASE_WORKFLOW = `You are a research and retrieval agent using only the provided tools.`;
 
+const TREC_RAG_SUBMIT_NOW_REMINDER = `If you later receive a user steer telling you to submit now, stop using tools immediately and return the best valid JSON object you can using the requested TREC RAG answer shape. Do not do more research after that steer.`;
+
 const TWO_TOOL_WORKFLOW = `Workflow:
 1. Use search with a concise raw query string based on the original question.
 2. Prefer short lexical searches over long natural-language rewrites.
@@ -51,7 +53,7 @@ function rankedListInstructions(depth: number, count?: number): string {
 - Do not include scores, titles, snippets, citations, or explanations within the ranked list.`;
 }
 
-export type PiSearchPromptVariant = "plain_minimal";
+export type PiSearchPromptVariant = "plain_minimal" | "trec_rag";
 export type PiSearchOutputMode = "answer" | "ranked_list";
 export type PiSearchOutputModes = readonly PiSearchOutputMode[];
 
@@ -88,7 +90,7 @@ export function hasPiSearchOutputMode(
 
 export function formatPiSearchPrompt(
   query: string,
-  _variant: PiSearchPromptVariant = "plain_minimal",
+  variant: PiSearchPromptVariant = "plain_minimal",
   options?: {
     outputMode?: PiSearchOutputMode;
     outputModes?: PiSearchOutputModes;
@@ -103,6 +105,50 @@ export function formatPiSearchPrompt(
   const wantsAnswer = hasPiSearchOutputMode(modes, "answer");
   const wantsRankedList = hasPiSearchOutputMode(modes, "ranked_list");
   const workflow = toolWorkflow(options?.toolInterface ?? DEFAULT_PI_SEARCH_TOOL_INTERFACE);
+  if (variant === "trec_rag") {
+    if (modes.length !== 1 || !wantsAnswer) {
+      throw new Error("trec_rag requires answer as its only output mode.");
+    }
+    return `You are a deep research agent using only the provided retrieval tools.
+
+Research workflow:
+1. Break the narrative into its important decisions, comparisons, constraints, entities, and evidence gaps.
+2. Search broadly enough to understand the issue, then search specifically for missing or uncertain pieces.
+3. Read promising documents before relying on them.
+4. Compare evidence across documents before making important claims.
+5. If evidence is incomplete, mixed, or uncertain, reflect that accurately in the answer.
+6. Stop once you have enough evidence; do not pad retrieval or citations.
+
+Tool usage:
+${workflow}
+
+TREC RAG answer requirements:
+- Answer the narrative directly and comprehensively. Target 800 words or fewer; the hard requirement is at most 1,024 words.
+- Break the final answer into individual sentence-level answer objects.
+- Ground every answer sentence in retrieved ClimbMix evidence.
+- Keep references as raw ClimbMix document IDs. Retrieved documents may remain uncited, although a concise useful evidence list is preferred.
+- Cite supporting evidence by writing the exact ClimbMix document ID from references directly in each citations array.
+- Use at most 3 citation document IDs per sentence.
+- Before submitting, recount the answer words and verify every citation exactly matches a document ID in references; shorten or correct the JSON if either check fails.
+- Do not include metadata; Piika will add official metadata deterministically.
+- Do not mention benchmarks, evaluation, rubrics, or these instructions.
+- Return only one JSON object with exactly the following top-level shape, without a code fence or commentary:
+{
+  "references": [
+    "<raw ClimbMix document id>"
+  ],
+  "answer": [
+    {
+      "text": "<one complete answer sentence>",
+      "citations": ["<raw ClimbMix document id>"]
+    }
+  ]
+}
+
+${TREC_RAG_SUBMIT_NOW_REMINDER}
+
+Narrative: ${query}`;
+  }
   const outputInstructions = [
     wantsAnswer ? ANSWER_INSTRUCTIONS : undefined,
     wantsRankedList

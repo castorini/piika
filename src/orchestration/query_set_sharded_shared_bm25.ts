@@ -31,6 +31,10 @@ import {
 import { resolveGitCommitProvenance } from "../runtime/git";
 import { writeRankedListTrecRunFile } from "../evaluation/ranked_list_output";
 import { hasPiSearchOutputMode } from "../pi-search/agent_prompt";
+import {
+  readTrecRagQueries,
+  writeTrecRagJsonlFromRunDirectory,
+} from "../evaluation/trec_rag_output";
 
 type Args = {
   benchmarkId?: string;
@@ -50,6 +54,9 @@ type Args = {
   toolInterface?: string;
   rankedListDepth?: number;
   rankedListCount?: number;
+  trecRagTeamId?: string;
+  trecRagRunId?: string;
+  trecRagRunDesc?: string;
   host?: string;
   port?: number;
   autoSummarizeOnMerge?: boolean;
@@ -112,6 +119,9 @@ type PersistedRunSetup = {
   outputModes?: string[];
   rankedListDepth?: string;
   rankedListCount?: string;
+  trecRagTeamId?: string;
+  trecRagRunId?: string;
+  trecRagRunDesc?: string;
 };
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -261,6 +271,27 @@ function parseArgs(argv: string[]): Args {
         args.rankedListCount = parseInteger(next, "rankedListCount");
         index += 1;
         break;
+      case "--trecRagTeamId":
+      case "--trec-rag-team-id":
+      case "--team-id":
+        if (!next) throw new Error(`${arg} requires a value`);
+        args.trecRagTeamId = next;
+        index += 1;
+        break;
+      case "--trecRagRunId":
+      case "--trec-rag-run-id":
+      case "--run-id":
+        if (!next) throw new Error(`${arg} requires a value`);
+        args.trecRagRunId = next;
+        index += 1;
+        break;
+      case "--trecRagRunDesc":
+      case "--trec-rag-run-desc":
+      case "--run-desc":
+        if (!next) throw new Error(`${arg} requires a value`);
+        args.trecRagRunDesc = next;
+        index += 1;
+        break;
       case "--host":
         if (!next) throw new Error(`${arg} requires a value`);
         args.host = next;
@@ -353,6 +384,9 @@ Options:
   --tool-interface <pyserini-rest-2tool|pi-serini-3tool>
   --ranked-list-depth <n>        Max requested ranked-list length (default: 1000)
   --ranked-list-count <n>        Require exactly this many ranked docids
+  --team-id <id>                 TREC RAG team identifier
+  --run-id <id>                  TREC RAG run identifier
+  --run-desc <text>              TREC RAG run description
   --host <host>
   --port <port>
   --max-shard-attempts <n>
@@ -384,6 +418,9 @@ function resolveShardedLaunchPlan(args: Args): ShardedLaunchPlan {
     toolInterface: args.toolInterface,
     rankedListDepth: args.rankedListDepth,
     rankedListCount: args.rankedListCount,
+    trecRagTeamId: args.trecRagTeamId,
+    trecRagRunId: args.trecRagRunId,
+    trecRagRunDesc: args.trecRagRunDesc,
   });
   const shardCount =
     args.shardCount ??
@@ -470,7 +507,7 @@ function printShardedLaunchPlan(plan: ShardedLaunchPlan): void {
   }
   console.log(`MODEL=${plan.model}`);
   console.log(`QUERY_FILE=${plan.queryPath}`);
-  console.log(`QRELS_FILE=${plan.qrelsPath}`);
+  console.log(`QRELS_FILE=${plan.qrelsPath ?? ""}`);
   console.log(`EXTENSION=${plan.extensionPath}`);
   console.log(`OUTPUT_ROOT=${plan.outputRoot}`);
   console.log(`LOG_DIR=${plan.logDir}`);
@@ -488,15 +525,12 @@ function ensureFileExists(path: string, label: string): void {
   }
 }
 
-function ensureEmptyDirectory(path: string): void {
+function ensureReusableDirectory(path: string): void {
   const absolutePath = resolve(REPO_ROOT, path);
-  if (!existsSync(absolutePath)) return;
-  if (!statSync(absolutePath).isDirectory()) {
+  if (existsSync(absolutePath) && !statSync(absolutePath).isDirectory()) {
     throw new Error(`Refusing to reuse non-directory benchmark artifact path: ${path}`);
   }
-  if (readdirSync(absolutePath).length > 0) {
-    throw new Error(`Refusing to reuse non-empty benchmark artifact directory: ${path}`);
-  }
+  mkdirSync(absolutePath, { recursive: true });
 }
 
 function logLine(path: string, message: string): void {
@@ -536,18 +570,10 @@ function splitQueries(plan: ShardedLaunchPlan): ShardFile[] {
   return files;
 }
 
-function copyUniqueFile(sourcePath: string, destinationPath: string): void {
+function copyMergedFile(sourcePath: string, destinationPath: string): void {
   const source = resolve(REPO_ROOT, sourcePath);
   const destination = resolve(REPO_ROOT, destinationPath);
   mkdirSync(dirname(destination), { recursive: true });
-  if (existsSync(destination)) {
-    const left = readFileSync(source);
-    const right = readFileSync(destination);
-    if (!left.equals(right)) {
-      throw new Error(`Conflicting artifact for ${destinationPath}`);
-    }
-    return;
-  }
   copyFileSync(source, destination);
 }
 
@@ -584,7 +610,7 @@ function buildPersistedRunSetup(args: {
   querySetId: string;
   model: string;
   queryPath: string;
-  qrelsPath: string;
+  qrelsPath?: string;
   totalQueries: number;
   timeoutSeconds: number;
   indexPath: string;
@@ -594,6 +620,9 @@ function buildPersistedRunSetup(args: {
   toolInterface: ShardedLaunchPlan["toolInterface"];
   rankedListDepth: number;
   rankedListCount?: number;
+  trecRagTeamId?: string;
+  trecRagRunId?: string;
+  trecRagRunDesc?: string;
 }): PersistedRunSetup {
   return {
     slice: args.querySetId,
@@ -620,6 +649,9 @@ function buildPersistedRunSetup(args: {
       hasPiSearchOutputMode(args.outputModes, "ranked_list") && args.rankedListCount
         ? String(args.rankedListCount)
         : undefined,
+    trecRagTeamId: args.trecRagTeamId ?? resolveEnvValue("TREC_RAG_TEAM_ID"),
+    trecRagRunId: args.trecRagRunId ?? resolveEnvValue("TREC_RAG_RUN_ID"),
+    trecRagRunDesc: args.trecRagRunDesc ?? resolveEnvValue("TREC_RAG_RUN_DESC"),
   };
 }
 
@@ -657,6 +689,9 @@ function writeMergedRunMetadata(plan: ShardedLaunchPlan, totalQueries: number): 
         toolInterface: plan.toolInterface,
         rankedListDepth: plan.rankedListDepth,
         rankedListCount: plan.rankedListCount,
+        trecRagTeamId: plan.trecRagTeamId,
+        trecRagRunId: plan.trecRagRunId,
+        trecRagRunDesc: plan.trecRagRunDesc,
       }),
       null,
       2,
@@ -671,6 +706,7 @@ export function mergeShardOutputs(
   totalQueries: number,
 ): void {
   mkdirSync(resolve(REPO_ROOT, plan.mergedOutputDir), { recursive: true });
+  const copiedPaths = new Set<string>();
   for (const shardName of shardNames) {
     const shardRoot = `${plan.shardOutputRoot}/${shardName}`;
     for (const relativePath of collectRelativeFiles(shardRoot)) {
@@ -685,12 +721,30 @@ export function mergeShardOutputs(
         /^raw-events\/[^/]+\.jsonl$/u.test(fromShard) ||
         /^stderr\/[^/]+\.log$/u.test(fromShard);
       if (!allowed) continue;
-      copyUniqueFile(relativePath, `${plan.mergedOutputDir}/${fromShard}`);
+      if (copiedPaths.has(fromShard)) {
+        throw new Error(`Duplicate artifact across shards: ${fromShard}`);
+      }
+      copiedPaths.add(fromShard);
+      copyMergedFile(relativePath, `${plan.mergedOutputDir}/${fromShard}`);
     }
   }
   writeMergedRunMetadata(plan, totalQueries);
   if (hasPiSearchOutputMode(plan.outputModes, "ranked_list")) {
     writeRankedListTrecRunFile({ runDir: resolve(REPO_ROOT, plan.mergedOutputDir) });
+  }
+  if (plan.piSearchPromptVariant === "trec_rag") {
+    const written = writeTrecRagJsonlFromRunDirectory({
+      runDir: resolve(REPO_ROOT, plan.mergedOutputDir),
+      queries: readTrecRagQueries(resolve(REPO_ROOT, plan.queryPath)),
+      teamId: plan.trecRagTeamId as string,
+      runId: plan.trecRagRunId as string,
+      runDesc: plan.trecRagRunDesc as string,
+    });
+    if (written.recordCount !== totalQueries) {
+      throw new Error(
+        `Merged TREC RAG output contains ${written.recordCount} records; expected ${totalQueries}`,
+      );
+    }
   }
 }
 
@@ -750,10 +804,12 @@ function spawnShard(plan: ShardedLaunchPlan, shard: ShardFile, attempt: number):
     "--ranked-list-depth",
     String(plan.rankedListDepth),
     ...(plan.rankedListCount ? ["--ranked-list-count", String(plan.rankedListCount)] : []),
-    "--qrels",
-    plan.qrelsPath,
+    ...(plan.qrelsPath ? ["--qrels", plan.qrelsPath] : []),
     "--index-path",
     plan.indexPath,
+    ...(plan.trecRagTeamId ? ["--team-id", plan.trecRagTeamId] : []),
+    ...(plan.trecRagRunId ? ["--run-id", plan.trecRagRunId] : []),
+    ...(plan.trecRagRunDesc ? ["--run-desc", plan.trecRagRunDesc] : []),
   ]);
   const child = spawnPipedCommand(
     args,
@@ -836,6 +892,9 @@ async function waitForRetryApproval(
 }
 
 async function runSummarize(plan: ShardedLaunchPlan): Promise<void> {
+  if (!plan.qrelsPath) {
+    throw new Error(`Benchmark ${plan.benchmarkId} has no qrels; summarization is unavailable.`);
+  }
   const summarizeLog = resolve(REPO_ROOT, plan.logDir, "summarize.log");
   const args = buildTsxCommand("src/evaluation/summarize_run.ts", [
     "--benchmark",
@@ -897,7 +956,7 @@ async function runEvaluate(plan: ShardedLaunchPlan): Promise<void> {
       env: {
         ...process.env,
         BENCHMARK: plan.benchmarkId,
-        QREL_EVIDENCE: plan.qrelsPath,
+        ...(plan.qrelsPath ? { QREL_EVIDENCE: plan.qrelsPath } : {}),
       },
     },
     "evaluate run",
@@ -923,7 +982,7 @@ async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   const plan = resolveShardedLaunchPlan(args);
   ensureFileExists(plan.queryPath, "Query file");
-  ensureFileExists(plan.qrelsPath, "Qrels file");
+  if (plan.qrelsPath) ensureFileExists(plan.qrelsPath, "Qrels file");
   ensureFileExists(plan.extensionPath, "Extension path");
   printShardedLaunchPlan(plan);
 
@@ -931,9 +990,9 @@ async function main(): Promise<void> {
     return;
   }
 
-  ensureEmptyDirectory(plan.shardQueryDir);
-  ensureEmptyDirectory(plan.shardOutputRoot);
-  ensureEmptyDirectory(plan.mergedOutputDir);
+  ensureReusableDirectory(plan.shardQueryDir);
+  ensureReusableDirectory(plan.shardOutputRoot);
+  ensureReusableDirectory(plan.mergedOutputDir);
   mkdirSync(resolve(REPO_ROOT, plan.logDir), { recursive: true });
   mkdirSync(resolve(REPO_ROOT, plan.controlDir), { recursive: true });
 
@@ -951,7 +1010,7 @@ async function main(): Promise<void> {
   logLine(runLogPath, `PROMPT_VARIANT=${plan.piSearchPromptVariant}`);
   logLine(runLogPath, `MODEL=${plan.model}`);
   logLine(runLogPath, `QUERY_FILE=${plan.queryPath}`);
-  logLine(runLogPath, `QRELS_FILE=${plan.qrelsPath}`);
+  logLine(runLogPath, `QRELS_FILE=${plan.qrelsPath ?? ""}`);
   logLine(runLogPath, `OUTPUT_ROOT=${plan.outputRoot}`);
   logLine(runLogPath, `OUTPUT_DIR=${plan.outputRoot}`);
   logLine(runLogPath, `MERGED_OUTPUT_DIR=${plan.mergedOutputDir}`);
