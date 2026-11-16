@@ -127,3 +127,26 @@ void test("benchmark query-set launch plan propagates supplied document bundle",
   assert.equal(env.SUPPLIED_DOC_BUNDLE, "data/supplied-docs/test.jsonl");
   assert.deepEqual(command.slice(-2), ["--supplied-doc-bundle", "data/supplied-docs/test.jsonl"]);
 });
+
+void test("rerank flags are forwarded to run_pi_benchmark only when given", () => {
+  const plain = resolveBenchmarkQuerySetLaunchPlan({
+    benchmarkId: "benchmark-template",
+    querySetId: "test",
+  });
+  assert.equal(plain.rerankFlags, undefined);
+  assert.ok(!buildRunPiBenchmarkCommand(plain).some((arg) => arg.startsWith("--rerank")));
+
+  const reranked = resolveBenchmarkQuerySetLaunchPlan({
+    benchmarkId: "benchmark-template",
+    querySetId: "test",
+    rerankFlags: { rerankWorkerUrl: "http://127.0.0.1:8200", rerankDepth: "50" },
+  });
+  const command = buildRunPiBenchmarkCommand(reranked);
+  const at = command.indexOf("--rerankWorkerUrl");
+  assert.deepEqual(command.slice(at, at + 4), [
+    "--rerankWorkerUrl",
+    "http://127.0.0.1:8200",
+    "--rerankDepth",
+    "50",
+  ]);
+});

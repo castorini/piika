@@ -458,6 +458,7 @@ Legacy shell scripts under `scripts/` still work, but they are compatibility shi
 - [General Piika agent skill](.agents/skills/use-piika/SKILL.md)
 - [NanoKnow agent skill](.agents/skills/run-piika-nanoknow/SKILL.md)
 - [BM25 backend interface](docs/bm25-extension-interface.md)
+- [Reranking search results with rank_llm](docs/reranking.md)
 - Released Run on BrowseComp-Plus (Canary to prevent leakage: `piserini-a-minimal-search-agent`)
   - [piika w/ DeepSeek V4 Flash](https://huggingface.co/datasets/ricky42613/piserini_bcp_deepseekv4_flash)
   - [piika w/ DeepSeek V4 Pro](https://huggingface.co/datasets/ricky42613/piserini_bcp_deepseekv4_pro)

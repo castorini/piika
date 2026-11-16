@@ -1,5 +1,6 @@
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
+import type { RerankCliFlag } from "../pi-search/rerank/config";
 import {
   buildBenchmarkQuerySetLaunchEnv,
   buildRunPiBenchmarkCommand,
@@ -130,6 +131,28 @@ function parseArgs(argv: string[]): Args {
       case "--dry-run":
         args.dryRun = true;
         break;
+      case "--rerankWorkerUrl":
+      case "--rerank-worker-url":
+      case "--rerankContextMode":
+      case "--rerank-context-mode":
+      case "--rerankDepth":
+      case "--rerank-depth":
+      case "--rerankMaxTraceChars":
+      case "--rerank-max-trace-chars":
+      case "--rerankTimeoutMs":
+      case "--rerank-timeout-ms":
+      case "--rerankRetryAttempts":
+      case "--rerank-retry-attempts":
+      case "--rerankRetryBaseDelayMs":
+      case "--rerank-retry-base-delay-ms": {
+        if (!next) throw new Error(`${arg} requires a value`);
+        const flag = arg
+          .slice(2)
+          .replace(/-([a-z])/g, (_, letter: string) => letter.toUpperCase()) as RerankCliFlag;
+        args.rerankFlags = { ...args.rerankFlags, [flag]: next };
+        index += 1;
+        break;
+      }
       case "--help":
       case "-h":
         printHelp();
@@ -172,6 +195,14 @@ Options:
   --qrels <path>                 Explicit override; wins over benchmark defaults
   --index-path <path>            Explicit override; wins over benchmark defaults
   --supplied-doc-bundle <path>   JSONL bundle of supplied documents grouped per query
+  --rerank-worker-url <url>      Rerank search results through a rank_llm worker (off when unset;
+                                 needs --tool-interface pyserini-rest-2tool; see docs/reranking.md)
+  --rerank-context-mode <mode>   none | global_query | reasoning | full (default: none)
+  --rerank-depth <n>             First-stage candidates handed to the reranker (default: 100)
+  --rerank-max-trace-chars <n>   Characters of reasoning trace forwarded, head kept (default: 2048)
+  --rerank-timeout-ms <ms>       Per-attempt worker timeout (default: 300000)
+  --rerank-retry-attempts <n>    Worker attempts before the search fails (default: 4)
+  --rerank-retry-base-delay-ms <ms>  First retry delay, doubled per retry (default: 1000)
   --dry-run
 
 Benchmarks:
