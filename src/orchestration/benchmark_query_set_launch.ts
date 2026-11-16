@@ -12,6 +12,7 @@ import {
   type PiSearchOutputModes,
 } from "../pi-search/agent_prompt";
 import { buildTsxCommand } from "../runtime/tsx";
+import { formatRerankCliArgs, type RerankCliFlags } from "../pi-search/rerank/config";
 import {
   DEFAULT_PI_SEARCH_TOOL_INTERFACE,
   parsePiSearchToolInterface,
@@ -36,6 +37,8 @@ export type BenchmarkQuerySetLaunchArgs = {
   toolInterface?: string;
   rankedListDepth?: number;
   rankedListCount?: number;
+  /** --rerank-* flags, forwarded to run_pi_benchmark unchanged (it validates them). */
+  rerankFlags?: RerankCliFlags;
 };
 
 export type BenchmarkQuerySetLaunchPlan = {
@@ -57,6 +60,7 @@ export type BenchmarkQuerySetLaunchPlan = {
   toolInterface: PiSearchToolInterface;
   rankedListDepth: number;
   rankedListCount?: number;
+  rerankFlags?: RerankCliFlags;
 };
 
 export function readEnv(name: string): string | undefined {
@@ -190,6 +194,9 @@ export function resolveBenchmarkQuerySetLaunchPlan(
     toolInterface,
     rankedListDepth,
     rankedListCount,
+    ...(args.rerankFlags && Object.keys(args.rerankFlags).length > 0
+      ? { rerankFlags: args.rerankFlags }
+      : {}),
   };
 }
 
@@ -250,6 +257,7 @@ export function buildRunPiBenchmarkCommand(plan: BenchmarkQuerySetLaunchPlan): s
     "--rankedListDepth",
     String(plan.rankedListDepth),
     ...(plan.rankedListCount ? ["--rankedListCount", String(plan.rankedListCount)] : []),
+    ...(plan.rerankFlags ? formatRerankCliArgs(plan.rerankFlags) : []),
   ]);
   if (plan.suppliedDocBundlePath) {
     command.push("--supplied-doc-bundle", plan.suppliedDocBundlePath);
@@ -277,5 +285,8 @@ export function printBenchmarkQuerySetLaunchPlan(plan: BenchmarkQuerySetLaunchPl
   console.log(`INDEX_PATH=${plan.indexPath}`);
   if (plan.suppliedDocBundlePath) {
     console.log(`SUPPLIED_DOC_BUNDLE=${plan.suppliedDocBundlePath}`);
+  }
+  if (plan.rerankFlags) {
+    console.log(`RERANK_ARGS=${formatRerankCliArgs(plan.rerankFlags).join(" ")}`);
   }
 }

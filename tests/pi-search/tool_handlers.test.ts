@@ -256,3 +256,88 @@ void test("mock adapter can power continuable read_document semantics through th
 
   cleanup();
 });
+
+function fakeRerankClient(
+  docids: (requested: string[]) => string[],
+  seen: Record<string, unknown>[],
+) {
+  return {
+    configuredDepth: 100,
+    async rerank(
+      qid: string,
+      query: string,
+      candidates: { docid: string }[],
+      topK: number,
+      context: { globalQuery?: string; reasoning?: string },
+    ) {
+      seen.push({ qid, query, topK, context, candidates: candidates.map((c) => c.docid) });
+      return {
+        docids: docids(candidates.map((c) => c.docid)),
+        usage: { promptTokens: 10, completionTokens: 2, calls: 2 },
+        contextFields: ["global_query", "reasoning"],
+        depth: candidates.length,
+        failed: false,
+        elapsedMs: 1,
+      };
+    },
+  };
+}
+
+void test("direct search with a reranker shows the worker's order and forwards the agent context", async () => {
+  const { deps, cleanup } = createRuntimeDeps();
+  const seen: Record<string, unknown>[] = [];
+  const traces = new Map([["call-1", "I should look for the engine designer."]]);
+  const result = await executeDirectSearchTool(
+    { reason: "rerank", query: "analytical engine", hits: 2 },
+    undefined,
+    { cwd: "." },
+    {
+      ...deps,
+      rerankClient: fakeRerankClient((ids) => [...ids].reverse(), seen) as never,
+      agentContext: { take: (id: string) => traces.get(id) ?? "" } as never,
+      globalQuery: "Who designed the analytical engine?",
+      queryId: "q7",
+    },
+    "call-1",
+  );
+  assert.deepEqual(result.details.retrievedDocids, ["doc-2", "doc-1"]);
+  assert.equal((result.details.rerank as { applied: boolean }).applied, true);
+  assert.deepEqual(seen[0].context, {
+    globalQuery: "Who designed the analytical engine?",
+    reasoning: "I should look for the engine designer.",
+  });
+  assert.equal(seen[0].qid, "q7");
+  cleanup();
+});
+
+void test("direct search fails the rerank when the worker's docids do not resolve", async () => {
+  const { deps, cleanup } = createRuntimeDeps();
+  await assert.rejects(
+    executeDirectSearchTool(
+      { reason: "rerank", query: "analytical engine", hits: 2 },
+      undefined,
+      { cwd: "." },
+      { ...deps, rerankClient: fakeRerankClient(() => ["unknown-doc"], []) as never },
+      "call-2",
+    ),
+    (error: Error) =>
+      error.name === "PiSearchRerankError" && /0 resolvable docids for 2/.test(error.message),
+  );
+  cleanup();
+});
+
+void test("direct search without a reranker asks the first stage for k and records no rerank details", async () => {
+  const { deps, cleanup } = createRuntimeDeps();
+  const result = await executeDirectSearchTool(
+    { reason: "plain", query: "analytical engine", hits: 1 },
+    undefined,
+    { cwd: "." },
+    deps,
+    "call-3",
+  );
+  assert.equal(result.details.k, 1);
+  assert.equal(result.details.retrievedDocids.length, 1);
+  assert.ok(!("rerank" in result.details));
+  assert.ok(!("firstStageK" in result.details));
+  cleanup();
+});

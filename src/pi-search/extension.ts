@@ -30,6 +30,13 @@ import {
   executeSearchTool,
 } from "./tool_handlers";
 import { parsePiSearchToolInterface, type PiSearchToolInterface } from "./tool_interface";
+import { AgentContextStore, resolveGlobalQuery } from "./agent_context";
+import { RerankWorkerClient } from "./rerank/client";
+import {
+  RERANK_DEFAULTS,
+  resolvePiSearchRerankConfigFromEnv,
+  type PiSearchRerankConfig,
+} from "./rerank/config";
 
 export type { PiSearchToolInterface } from "./tool_interface";
 
@@ -40,6 +47,7 @@ export type PiSearchExtensionOptions = {
   buildCacheKey?: PiSearchBackendRuntimeOptions["buildCacheKey"];
   spillDirPrefix?: string;
   toolInterface?: PiSearchToolInterface;
+  rerankConfig?: PiSearchRerankConfig | null;
 };
 
 function resolveToolInterface(options: PiSearchExtensionOptions): PiSearchToolInterface {
@@ -61,6 +69,18 @@ export function registerPiSearchExtension(
     });
   const spillDir = new ManagedTempSpillDir(options.spillDirPrefix ?? "pi-search-extension-");
   const toolInterface = resolveToolInterface(options);
+  // Reranking is opt-in. With no config this is null and the search path is
+  // exactly the behaviour without reranking.
+  const rerankConfig = options.rerankConfig ?? resolvePiSearchRerankConfigFromEnv(process.env);
+  if (rerankConfig && toolInterface !== "pyserini-rest-2tool") {
+    throw new Error(
+      `Reranking needs the pyserini-rest-2tool tool interface; this run uses ${toolInterface}`,
+    );
+  }
+  const rerankClient = rerankConfig ? new RerankWorkerClient(rerankConfig) : undefined;
+  const agentContext = rerankConfig
+    ? new AgentContextStore(rerankConfig.maxTraceChars ?? RERANK_DEFAULTS.maxTraceChars)
+    : undefined;
   const submitNowDelayMs = getSubmitNowDelayMs();
   let spillSequence = 0;
   let submitNowTimer: ReturnType<typeof setTimeout> | null = null;
@@ -91,6 +111,14 @@ export function registerPiSearchExtension(
     searchStore,
     spillDir,
     nextSpillSequence,
+    ...(rerankConfig
+      ? {
+          rerankClient,
+          agentContext,
+          globalQuery: resolveGlobalQuery(process.env),
+          queryId: process.env.PI_SEARCH_QUERY_ID?.trim() || undefined,
+        }
+      : {}),
   };
   const pyseriniRestPaginatedRead =
     toolInterface === "pyserini-rest-2tool" &&
@@ -142,6 +170,24 @@ export function registerPiSearchExtension(
       }
     }, submitNowDelayMs);
   });
+
+  if (agentContext) {
+    // pi drains agent events before firing tool_call, so the session is
+    // synchronized through the assistant message carrying this call: the one
+    // moment its thinking and its query are both known. Registered before the
+    // submit-now handler; it never blocks a call.
+    pi.on("tool_call", async (event, ctx) => {
+      if (event.toolName !== "search") return;
+      try {
+        agentContext.record(String(event.toolCallId), ctx.sessionManager.getBranch());
+      } catch (error) {
+        console.error(
+          `[pi-search] Could not read the reasoning trace for this search; it will be ` +
+            `reranked without one. ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    });
+  }
 
   pi.on("tool_call", async (event) => {
     if (!submitNowMode) {
@@ -203,9 +249,9 @@ export function registerPiSearchExtension(
           ],
     parameters:
       toolInterface === "pyserini-rest-2tool" ? DirectSearchParamsSchema : PlainSearchParamsSchema,
-    async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+    async execute(toolCallId, params, signal, _onUpdate, ctx) {
       return toolInterface === "pyserini-rest-2tool"
-        ? executeDirectSearchTool(params, signal, ctx, toolDeps)
+        ? executeDirectSearchTool(params, signal, ctx, toolDeps, toolCallId)
         : executeSearchTool(params, signal, ctx, toolDeps);
     },
   });

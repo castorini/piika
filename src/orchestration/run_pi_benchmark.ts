@@ -35,6 +35,11 @@ import {
 } from "../pi-search/agent_prompt";
 import type { PiSearchToolInterface } from "../pi-search/extension";
 import {
+  pickRerankCliFlags,
+  resolvePiSearchRerankConfig,
+  type PiSearchRerankConfig,
+} from "../pi-search/rerank/config";
+import {
   DEFAULT_PI_SEARCH_TOOL_INTERFACE,
   parsePiSearchToolInterface,
 } from "../pi-search/tool_interface";
@@ -134,6 +139,8 @@ type PersistedRunSetup = {
   outputModes?: string[];
   rankedListDepth?: string;
   rankedListCount?: string;
+  /** Present only for reranked runs (--rerank-* flags or PI_SEARCH_RERANK_CONFIG). */
+  rerank?: PiSearchRerankConfig;
 };
 
 type RunPiOptions = {
@@ -451,6 +458,14 @@ function parseArgs(argv: string[]) {
   }
 
   const outputModes = parsePiSearchOutputModes(out.outputMode);
+  const toolInterface = parsePiSearchToolInterface(out.toolInterface);
+  // Opt-in: null unless --rerank-worker-url (or PI_SEARCH_RERANK_CONFIG) is set.
+  const rerankConfig = resolvePiSearchRerankConfig(pickRerankCliFlags(out), process.env);
+  if (rerankConfig && toolInterface !== "pyserini-rest-2tool") {
+    throw new Error(
+      `Reranking needs --toolInterface pyserini-rest-2tool; this run uses ${toolInterface}`,
+    );
+  }
   return {
     benchmarkId: benchmarkConfig.benchmark.id,
     querySetId: benchmarkConfig.querySetId,
@@ -470,7 +485,8 @@ function parseArgs(argv: string[]) {
     outputModes,
     rankedListDepth,
     rankedListCount,
-    toolInterface: parsePiSearchToolInterface(out.toolInterface),
+    toolInterface,
+    rerankConfig,
   };
 }
 
@@ -1311,6 +1327,7 @@ function buildPersistedRunSetup(args: {
   outputModes: PiSearchOutputModes;
   rankedListDepth: number;
   rankedListCount?: number;
+  rerank?: PiSearchRerankConfig | null;
 }): PersistedRunSetup {
   return {
     slice: args.querySetId,
@@ -1338,6 +1355,7 @@ function buildPersistedRunSetup(args: {
       hasPiSearchOutputMode(args.outputModes, "ranked_list") && args.rankedListCount
         ? String(args.rankedListCount)
         : undefined,
+    ...(args.rerank ? { rerank: args.rerank } : {}),
   };
 }
 
@@ -1386,6 +1404,9 @@ async function main() {
     }
   }
   console.log(`Using toolInterface=${args.toolInterface}`);
+  if (args.rerankConfig) {
+    console.log(`Using rerank=${JSON.stringify(args.rerankConfig)}`);
+  }
   if (benchmarkManifestSnapshot.git_commit_short) {
     console.log(`Using gitCommit=${benchmarkManifestSnapshot.git_commit_short}`);
   }
@@ -1416,6 +1437,7 @@ async function main() {
         outputModes: args.outputModes,
         rankedListDepth: args.rankedListDepth,
         rankedListCount: args.rankedListCount,
+        rerank: args.rerankConfig,
       }),
       null,
       2,
@@ -1527,6 +1549,16 @@ async function main() {
             ...searchBackendConnection.env,
             PI_SEARCH_EXTENSION_CONFIG: JSON.stringify(searchBackendConnection.config),
             PI_SEARCH_TOOL_INTERFACE: args.toolInterface,
+            // Reranked runs only: the worker config, plus the question that
+            // opened this session (for rerankers that score a sub-query in its
+            // light) and its id (so worker logs line up with run artifacts).
+            ...(args.rerankConfig
+              ? {
+                  PI_SEARCH_RERANK_CONFIG: JSON.stringify(args.rerankConfig),
+                  PI_SEARCH_GLOBAL_QUERY: query,
+                  PI_SEARCH_QUERY_ID: queryId,
+                }
+              : {}),
           },
           rawEventsPath,
           stderrPath,

@@ -1,4 +1,7 @@
 import type { PiSearchBackendRuntime } from "./searcher/runtime";
+import type { AgentContextStore } from "./agent_context";
+import type { SearchBackendSearchHit } from "./searcher/contract/types";
+import { PiSearchRerankError, type RerankWorkerClient } from "./rerank/client";
 import { PiSearchInvalidToolArgumentsError, PiSearchToolExecutionError } from "./protocol/errors";
 import type {
   DirectReadDocumentParams,
@@ -42,6 +45,14 @@ type ToolHandlerDeps = {
   searchStore: SearchSessionStore;
   spillDir: ManagedTempSpillDir;
   nextSpillSequence: SpillSequence;
+  /** Absent when reranking is off, which leaves the search path untouched. */
+  rerankClient?: RerankWorkerClient;
+  /** Reasoning traces captured at tool_call, keyed by tool call id. */
+  agentContext?: AgentContextStore;
+  /** The question that opened the session. */
+  globalQuery?: string;
+  /** Benchmark query id, forwarded so worker logs line up with run artifacts. */
+  queryId?: string;
 };
 
 function formatReadDocumentText(parsed: {
@@ -186,6 +197,7 @@ export async function executeDirectSearchTool(
   signal: AbortSignal | undefined,
   ctx: ToolExecutionContext,
   deps: ToolHandlerDeps,
+  toolCallId?: string,
 ) {
   const backend = deps.backendRuntime.getBackend(ctx.cwd);
   const rawQuery = String(params.query ?? "").trim();
@@ -196,26 +208,43 @@ export async function executeDirectSearchTool(
     );
   }
   const limit = normalizeDirectSearchLimit(params.hits);
+  // With a reranker, the first stage is asked for a deeper pool and the
+  // reranker decides which `limit` of it the agent sees. Without one, the
+  // first stage is asked for exactly what the agent asked for.
+  const rerankClient = deps.rerankClient;
+  const firstStageLimit = rerankClient ? Math.max(limit, rerankClient.configuredDepth) : limit;
   const response = await backend.search(
     {
       query: rawQuery,
-      limit,
+      limit: firstStageLimit,
     },
     signal,
   );
+  const reranked = rerankClient
+    ? await rerankDirectSearchHits(
+        rerankClient,
+        response.hits,
+        rawQuery,
+        limit,
+        deps,
+        toolCallId,
+        signal,
+      )
+    : undefined;
+  const hits = reranked ? reranked.hits : response.hits;
 
   const renderedText = formatDirectSearchText({
     rawQuery,
     limit,
-    hits: response.hits,
+    hits,
   });
   const rendered = truncateSearchOutput(
     deps.spillDir,
     `direct_search_${deps.nextSpillSequence()}.txt`,
     renderedText,
-    JSON.stringify({ rawQuery, limit, hits: response.hits }, null, 2),
+    JSON.stringify({ rawQuery, limit, hits }, null, 2),
   );
-  const docids = response.hits.map((hit) => hit.docid);
+  const docids = hits.map((hit) => hit.docid);
   return {
     content: [{ type: "text" as const, text: rendered.text }],
     details: {
@@ -223,8 +252,9 @@ export async function executeDirectSearchTool(
       rawQuery,
       queryMode: SEARCH_QUERY_MODE,
       k: limit,
-      returnedRankStart: response.hits.length > 0 ? 1 : 0,
-      returnedRankEnd: response.hits.length,
+      ...(reranked ? { firstStageK: firstStageLimit, rerank: reranked.details } : {}),
+      returnedRankStart: hits.length > 0 ? 1 : 0,
+      returnedRankEnd: hits.length,
       retrievedDocids: docids,
       previewedDocids: docids,
       timingMs: {
@@ -234,6 +264,56 @@ export async function executeDirectSearchTool(
       },
       truncation: rendered.truncation,
       fullOutputPath: rendered.fullOutputPath,
+    },
+  };
+}
+
+type DirectSearchHit = SearchBackendSearchHit;
+
+/**
+ * The first-stage pool in the rerank worker's order, cut to `limit`, with the
+ * rerank details recorded on the tool result. The worker must rank the
+ * candidates it was given: a list that does not fill the visible slots is a
+ * reranker failure like any other, so it throws rather than showing
+ * first-stage order or fewer hits.
+ */
+async function rerankDirectSearchHits(
+  rerankClient: RerankWorkerClient,
+  pool: DirectSearchHit[],
+  rawQuery: string,
+  limit: number,
+  deps: ToolHandlerDeps,
+  toolCallId: string | undefined,
+  signal: AbortSignal | undefined,
+): Promise<{ hits: DirectSearchHit[]; details: Record<string, unknown> }> {
+  const reasoning = toolCallId ? (deps.agentContext?.take(toolCallId) ?? "") : "";
+  const outcome = await rerankClient.rerank(
+    deps.queryId ?? "",
+    rawQuery,
+    pool.map((hit) => ({ docid: hit.docid, score: hit.score, text: hit.snippet ?? "" })),
+    limit,
+    { globalQuery: deps.globalQuery, reasoning },
+    signal,
+  );
+  const byDocid = new Map(pool.map((hit) => [hit.docid, hit]));
+  const reordered = outcome.docids
+    .map((docid) => byDocid.get(docid))
+    .filter((hit): hit is DirectSearchHit => Boolean(hit));
+  const expected = Math.min(limit, pool.length);
+  if (reordered.length < expected) {
+    throw new PiSearchRerankError(
+      `rerank worker returned ${reordered.length} resolvable docids for ${expected} result slots`,
+    );
+  }
+  return {
+    hits: reordered.slice(0, limit),
+    details: {
+      applied: !outcome.failed,
+      failed: outcome.failed,
+      depth: outcome.depth,
+      contextFields: outcome.contextFields,
+      elapsedMs: Number(outcome.elapsedMs.toFixed(1)),
+      usage: outcome.usage,
     },
   };
 }
