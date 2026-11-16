@@ -33,6 +33,7 @@ import {
   getOpenedDocids,
   getSurfacedDocids,
 } from "./run_docid_views";
+import { boundJudgedResponse, resolveJudgeMaxResponseChars } from "./judge_response_bound";
 
 type GroundTruthEntry = {
   question: string;
@@ -378,7 +379,8 @@ function getFinalResponse(runData: RunResultRecord): string {
   const result = Array.isArray(runData.result) ? runData.result : [];
   const last = result[result.length - 1];
   if (last?.type === "output_text" && typeof last.output === "string") {
-    return last.output;
+    const maxChars = resolveJudgeMaxResponseChars();
+    return maxChars === undefined ? last.output : boundJudgedResponse(last.output, maxChars);
   }
   return "";
 }

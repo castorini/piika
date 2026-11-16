@@ -82,6 +82,10 @@ type BenchmarkRun = {
   query_id: string;
   tool_call_counts: Record<string, number>;
   status: string;
+  /** PI_SEARCH_FAIL_FAST=1 only: why the run failed when the cause is known, i.e.
+   *  the search side aborted it (retrieval_error, rerank_error) or the agent's
+   *  own LLM call failed after pi's retries (agent_inference_error). */
+  failure?: RunFailure;
   completion_source: "assistant_text" | null;
   surfaced_docids: string[];
   previewed_docids: string[];
@@ -94,6 +98,8 @@ type BenchmarkRun = {
   stats: {
     elapsed_seconds: number;
     assistant_turns: number;
+    /** PIIKA_RECORD_AGENT_USAGE=1 only. */
+    usage?: AgentUsage;
     tool_calls_total: number;
     seconds_per_assistant_turn: number | null;
     seconds_per_tool_call: number | null;
@@ -103,10 +109,25 @@ type BenchmarkRun = {
     search_rewrites_after_browse: number;
     search_rewrites_without_browse: number;
     pi_search_failures: number;
+    /** PI_SEARCH_FAIL_FAST=1 only: LLM calls pi retried after a transient error. */
+    agent_retries?: number;
     timed_out: boolean;
   };
   result: NormalizedResult[];
 };
+
+type RunFailure = { kind: string; tool?: string; message: string };
+
+/** The line the pi-search extension prints before exiting under PI_SEARCH_FAIL_FAST=1. */
+const FATAL_MARKER = /\[pi-search\] FATAL kind=(\S+) tool=(\S+) message=(.*)/;
+
+/** Opt-in run records (both unset = records exactly as before). */
+function isFailFastEnabled(): boolean {
+  return process.env.PI_SEARCH_FAIL_FAST === "1";
+}
+function isAgentUsageRecorded(): boolean {
+  return process.env.PIIKA_RECORD_AGENT_USAGE === "1";
+}
 
 type EvidenceQrels = Map<string, Set<string>>;
 
@@ -300,6 +321,9 @@ function getPyseriniRestEnvShortcutConfig(): PiSearchExtensionConfig | null {
     index,
     tokenEnv,
     searchMaxDocLength: parseOptionalIntegerEnv("PYSERINI_REST_SEARCH_MAX_DOC_LENGTH"),
+    maxConcurrentRequests: parseOptionalIntegerEnv("PYSERINI_REST_MAX_CONCURRENT"),
+    minRequestIntervalMs: parseOptionalIntegerEnv("PYSERINI_REST_MIN_INTERVAL_MS"),
+    maxAttempts: parseOptionalIntegerEnv("PYSERINI_REST_MAX_ATTEMPTS"),
     readMode: parsePyseriniRestReadMode(readEnv("PYSERINI_REST_READ_MODE") ?? "paginated"),
   });
 }
@@ -864,6 +888,9 @@ type QueryRunAccumulator = {
   toolArgsByCallId: Map<string, unknown>;
   finalAssistantText: string;
   sawAgentEnd: boolean;
+  fatal?: RunFailure;
+  agentError?: string;
+  agentRetries: number;
   assistantTurns: number;
   searchCalls: number;
   readSearchResultsCalls: number;
@@ -872,7 +899,72 @@ type QueryRunAccumulator = {
   searchRewritesWithoutBrowse: number;
   piSearchFailures: number;
   openSearchSession: { sawBrowse: boolean } | null;
+  usage: AgentUsage;
 };
+
+/**
+ * Token and cost usage summed over a query's assistant turns.
+ *
+ * pi reports usage per assistant message. Cost fields are whatever the
+ * provider reported, so a model with no configured prices contributes zeros;
+ * `assistantTurnsWithUsage` says whether any usage was seen at all.
+ */
+type AgentUsage = {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+  totalTokens: number;
+  reasoning: number;
+  assistantTurnsWithUsage: number;
+  cost: {
+    input: number;
+    output: number;
+    cacheRead: number;
+    cacheWrite: number;
+    total: number;
+  };
+};
+
+function emptyAgentUsage(): AgentUsage {
+  return {
+    input: 0,
+    output: 0,
+    cacheRead: 0,
+    cacheWrite: 0,
+    totalTokens: 0,
+    reasoning: 0,
+    assistantTurnsWithUsage: 0,
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+  };
+}
+
+function numberOr(value: unknown, fallback = 0): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function accumulateAgentUsage(usage: AgentUsage, rawUsage: Record<string, unknown>): void {
+  const cost = (rawUsage.cost ?? {}) as Record<string, unknown>;
+  const tokenKeys = ["input", "output", "cacheRead", "cacheWrite", "totalTokens", "reasoning"];
+  const costKeys = ["input", "output", "cacheRead", "cacheWrite", "total"];
+  const sawAny =
+    tokenKeys.some((key) => numberOr(rawUsage[key]) !== 0) ||
+    costKeys.some((key) => numberOr(cost[key]) !== 0);
+  if (!sawAny) return;
+
+  usage.assistantTurnsWithUsage += 1;
+  usage.input += numberOr(rawUsage.input);
+  usage.output += numberOr(rawUsage.output);
+  usage.cacheRead += numberOr(rawUsage.cacheRead);
+  usage.cacheWrite += numberOr(rawUsage.cacheWrite);
+  usage.totalTokens += numberOr(rawUsage.totalTokens);
+  usage.reasoning += numberOr(rawUsage.reasoning);
+  usage.cost.input += numberOr(cost.input);
+  usage.cost.output += numberOr(cost.output);
+  usage.cost.cacheRead += numberOr(cost.cacheRead);
+  usage.cost.cacheWrite += numberOr(cost.cacheWrite);
+  usage.cost.total += numberOr(cost.total);
+}
 
 function createQueryRunAccumulator(): QueryRunAccumulator {
   return {
@@ -883,6 +975,7 @@ function createQueryRunAccumulator(): QueryRunAccumulator {
     toolArgsByCallId: new Map<string, unknown>(),
     finalAssistantText: "",
     sawAgentEnd: false,
+    agentRetries: 0,
     assistantTurns: 0,
     searchCalls: 0,
     readSearchResultsCalls: 0,
@@ -891,6 +984,7 @@ function createQueryRunAccumulator(): QueryRunAccumulator {
     searchRewritesWithoutBrowse: 0,
     piSearchFailures: 0,
     openSearchSession: null,
+    usage: emptyAgentUsage(),
   };
 }
 
@@ -961,11 +1055,40 @@ function applyEventToAccumulator(
   }
 
   if (event.type === "message_end") {
-    const message = (event.message ?? {}) as { role?: string; content?: unknown };
+    const message = (event.message ?? {}) as {
+      role?: string;
+      content?: unknown;
+      usage?: Record<string, unknown>;
+      stopReason?: string;
+      errorMessage?: string;
+    };
     if (message.role === "assistant") {
       state.assistantTurns += 1;
+      accumulateAgentUsage(state.usage, message.usage ?? {});
       const text = extractText(message.content);
       if (text) state.finalAssistantText = text;
+      if (message.stopReason === "error") {
+        state.agentError = message.errorMessage ?? "assistant message ended with stopReason=error";
+      }
+    }
+    return;
+  }
+
+  // pi retries transient LLM errors itself (exponential backoff, bounded by its
+  // retry settings). Counted, and exhausting them is a failure; both are only
+  // reported under PI_SEARCH_FAIL_FAST=1.
+  if (event.type === "auto_retry_start") {
+    state.agentRetries += 1;
+    return;
+  }
+  if (event.type === "auto_retry_end") {
+    const retry = event as { success?: boolean; finalError?: string };
+    if (retry.success === false) {
+      state.agentError = retry.finalError ?? "agent LLM call failed after retries";
+    } else {
+      // The errored message_end that triggered the retry recorded its error; a
+      // successful retry means the agent recovered and carried on.
+      state.agentError = undefined;
     }
     return;
   }
@@ -1133,6 +1256,10 @@ async function runPiOnce(
       stderrStream.write(text);
       stderrTail = appendStderrTail(stderrTail, text);
       lastProgressAt = Date.now();
+      if (isFailFastEnabled() && !state.fatal) {
+        const fatal = FATAL_MARKER.exec(text);
+        if (fatal) state.fatal = { kind: fatal[1], tool: fatal[2], message: fatal[3].trim() };
+      }
     });
 
     rawEventsStream.on("error", (error) => {
@@ -1201,11 +1328,21 @@ function finalizeRun(
 
   const toolCallsTotal = Object.values(state.toolCallCounts).reduce((sum, count) => sum + count, 0);
   const completionSource = state.finalAssistantText ? "assistant_text" : null;
+  const failFast = isFailFastEnabled();
+  const failure: RunFailure | undefined = !failFast
+    ? undefined
+    : state.fatal
+      ? state.fatal
+      : state.agentError
+        ? { kind: "agent_inference_error", message: state.agentError }
+        : undefined;
   const status = timedOut
     ? "timeout"
-    : exitCode === 0 && state.sawAgentEnd && state.finalAssistantText
-      ? "completed"
-      : "failed";
+    : failure
+      ? "failed"
+      : exitCode === 0 && state.sawAgentEnd && state.finalAssistantText
+        ? "completed"
+        : "failed";
   if (status !== "completed" && stderrTail.trim()) {
     finalizedResults.push({
       type: "output_text",
@@ -1259,6 +1396,7 @@ function finalizeRun(
     query_id: queryId,
     tool_call_counts: state.toolCallCounts,
     status,
+    ...(failure ? { failure } : {}),
     completion_source: completionSource,
     surfaced_docids: surfacedDocids,
     previewed_docids: previewedDocids,
@@ -1271,6 +1409,7 @@ function finalizeRun(
     stats: {
       elapsed_seconds: Number(elapsedSeconds.toFixed(3)),
       assistant_turns: state.assistantTurns,
+      ...(isAgentUsageRecorded() ? { usage: state.usage } : {}),
       tool_calls_total: toolCallsTotal,
       seconds_per_assistant_turn:
         state.assistantTurns > 0
@@ -1284,6 +1423,7 @@ function finalizeRun(
       search_rewrites_after_browse: state.searchRewritesAfterBrowse,
       search_rewrites_without_browse: state.searchRewritesWithoutBrowse,
       pi_search_failures: state.piSearchFailures,
+      ...(failFast ? { agent_retries: state.agentRetries } : {}),
       timed_out: timedOut,
     },
     result: finalizedResults,
@@ -1642,7 +1782,7 @@ async function main() {
       const queryRecall = updateRunningRecall(runningRecall, run, qrels);
       const running = formatRunningRecall(runningRecall);
       console.log(
-        `[${index + 1}/${queries.length}] Wrote ${outputPath} status=${run.status} completion=${run.completion_source ?? "none"} elapsed=${run.stats.elapsed_seconds}s assistant_turns=${run.stats.assistant_turns} tool_calls=${run.stats.tool_calls_total} search=${run.stats.search_calls} browse=${run.stats.read_search_results_calls} read=${run.stats.read_document_calls} rewrites_after_browse=${run.stats.search_rewrites_after_browse} rewrites_without_browse=${run.stats.search_rewrites_without_browse} sec/turn=${run.stats.seconds_per_assistant_turn ?? "n/a"} query_recall=${queryRecall.recall.toFixed(4)} (${queryRecall.hits}/${queryRecall.goldCount}) running_macro=${running.macro.toFixed(4)} running_micro=${running.micro.toFixed(4)} ${running.statusSummary}`,
+        `[${index + 1}/${queries.length}] Wrote ${outputPath} status=${run.status}${run.failure ? ` failure=${run.failure.kind}` : ""} completion=${run.completion_source ?? "none"} elapsed=${run.stats.elapsed_seconds}s assistant_turns=${run.stats.assistant_turns} tool_calls=${run.stats.tool_calls_total} search=${run.stats.search_calls} browse=${run.stats.read_search_results_calls} read=${run.stats.read_document_calls} rewrites_after_browse=${run.stats.search_rewrites_after_browse} rewrites_without_browse=${run.stats.search_rewrites_without_browse} sec/turn=${run.stats.seconds_per_assistant_turn ?? "n/a"} query_recall=${queryRecall.recall.toFixed(4)} (${queryRecall.hits}/${queryRecall.goldCount}) running_macro=${running.macro.toFixed(4)} running_micro=${running.micro.toFixed(4)} ${running.statusSummary}`,
       );
       appendBenchmarkProgressEvent({
         ts: Date.now(),

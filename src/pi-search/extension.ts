@@ -1,21 +1,43 @@
+import { writeSync } from "node:fs";
+
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { resolvePiSearchExtensionConfigFromEnv, type PiSearchExtensionConfig } from "./config";
 import {
   BENCHMARK_TIMEOUT_SECONDS,
+  CONTEXT_SUBMIT_NOW_BLOCK_REASON,
+  CONTEXT_SUBMIT_NOW_STEER_MESSAGE,
+  contextTokensAfterTurn,
   dumpPromptSnapshot,
   getSubmitNowDelayMs,
+  isRepeatQueryBlockEnabled,
+  normalizeSearchQuery,
+  REPEAT_QUERY_BLOCK_MESSAGE,
+  resolveSubmitNowPromptTokens,
   stripBenchmarkIrrelevantSystemPromptSections,
+  SUBMIT_NOW_BLOCK_REASON,
   SUBMIT_NOW_STEER_MESSAGE,
   SUBMIT_NOW_TRIGGER_RATIO,
 } from "./prompt_policy";
 import {
   DirectReadDocumentParamsSchema,
+  DirectSearchParamsPinnedSchema,
   DirectSearchParamsSchema,
   PlainSearchParamsSchema,
   ReadDocumentParamsSchema,
   ReadSearchResultsParamsSchema,
 } from "./protocol/schemas";
+import {
+  applyMaxOutputTokens,
+  applySamplingOverrides,
+  resolveMaxOutputTokens,
+  resolveSamplingOverrides,
+} from "./output_tokens";
+import { PiSearchRerankError } from "./rerank/client";
 import { SearchSessionStore } from "./search_cache";
+import {
+  PiSearchBackendExecutionError,
+  PiSearchBackendUnavailableError,
+} from "./searcher/contract/errors";
 import {
   PiSearchBackendRuntime,
   type PiSearchBackendFactory,
@@ -28,6 +50,7 @@ import {
   executeReadDocumentTool,
   executeReadSearchResultsTool,
   executeSearchTool,
+  isDirectSearchHitsCapped,
 } from "./tool_handlers";
 import { parsePiSearchToolInterface, type PiSearchToolInterface } from "./tool_interface";
 import { AgentContextStore, resolveGlobalQuery } from "./agent_context";
@@ -82,9 +105,28 @@ export function registerPiSearchExtension(
     ? new AgentContextStore(rerankConfig.maxTraceChars ?? RERANK_DEFAULTS.maxTraceChars)
     : undefined;
   const submitNowDelayMs = getSubmitNowDelayMs();
+  const submitNowPromptTokens = resolveSubmitNowPromptTokens(process.env);
+  const blockRepeatQueries = isRepeatQueryBlockEnabled(process.env);
+  const issuedQueries = new Set<string>();
+  const failFast = isFailFastEnabled(process.env);
+  // Opt-in: without PI_SEARCH_MAX_OUTPUT_TOKENS or PI_SEARCH_SAMPLING_OVERRIDES
+  // no handler is registered and provider payloads are exactly what pi built.
+  const maxOutputTokens = resolveMaxOutputTokens(process.env);
+  const samplingOverrides = resolveSamplingOverrides(process.env);
+  if (maxOutputTokens !== undefined || samplingOverrides !== undefined) {
+    pi.on("before_provider_request", async (event) => {
+      let payload = event.payload;
+      if (maxOutputTokens !== undefined) payload = applyMaxOutputTokens(payload, maxOutputTokens);
+      if (samplingOverrides !== undefined)
+        payload = applySamplingOverrides(payload, samplingOverrides);
+      return payload;
+    });
+  }
   let spillSequence = 0;
   let submitNowTimer: ReturnType<typeof setTimeout> | null = null;
   let submitNowMode = false;
+  // Block note for retrieval calls once submit-now is on; names the budget that ran out.
+  let submitNowBlockReason = SUBMIT_NOW_BLOCK_REASON;
   let promptSnapshotWritten = false;
   let spillCleanupRegistered = false;
 
@@ -157,6 +199,7 @@ export function registerPiSearchExtension(
         return;
       }
       submitNowMode = true;
+      submitNowBlockReason = SUBMIT_NOW_BLOCK_REASON;
       try {
         console.error(
           `[pi-search] Time budget threshold reached at ${(submitNowDelayMs / 1000).toFixed(1)}s (${Math.round(SUBMIT_NOW_TRIGGER_RATIO * 100)}% of TIMEOUT_SECONDS=${BENCHMARK_TIMEOUT_SECONDS}); queueing submit-now steer and blocking further retrieval tools.`,
@@ -189,8 +232,61 @@ export function registerPiSearchExtension(
     });
   }
 
+  if (submitNowPromptTokens !== null) {
+    // Opt-in (PI_SEARCH_SUBMIT_NOW_PROMPT_TOKENS). Fires at the end of an
+    // assistant turn that calls tools, before those calls run: pi emits
+    // message_end first, then the tool_call hooks, and it delivers queued
+    // steers before the next model request. So this turn's retrieval calls are
+    // already blocked, and the next request carries the steer. A turn that
+    // answers (no tool calls) never triggers it, so a finished trajectory is
+    // not reopened.
+    pi.on("message_end", async (event) => {
+      const message = event.message as {
+        role?: string;
+        content?: Array<{ type?: string }>;
+        usage?: Parameters<typeof contextTokensAfterTurn>[0];
+      };
+      if (submitNowMode || message.role !== "assistant" || !message.usage) {
+        return;
+      }
+      if (!(message.content ?? []).some((part) => part.type === "toolCall")) {
+        return;
+      }
+      const contextTokens = contextTokensAfterTurn(message.usage);
+      if (contextTokens < submitNowPromptTokens) {
+        return;
+      }
+      submitNowMode = true;
+      submitNowBlockReason = CONTEXT_SUBMIT_NOW_BLOCK_REASON;
+      try {
+        console.error(
+          `[pi-search] Prompt-size threshold reached: ${contextTokens} tokens after this turn >= PI_SEARCH_SUBMIT_NOW_PROMPT_TOKENS=${submitNowPromptTokens}; queueing submit-now steer and blocking further retrieval tools.`,
+        );
+        pi.sendUserMessage(CONTEXT_SUBMIT_NOW_STEER_MESSAGE, { deliverAs: "steer" });
+      } catch (error) {
+        console.error(
+          `[pi-search] Failed to queue submit-now steer: ${error instanceof Error ? error.message : String(error)}`,
+        );
+        submitNowMode = false;
+      }
+    });
+  }
+
   pi.on("tool_call", async (event) => {
     if (!submitNowMode) {
+      if (blockRepeatQueries && event.toolName === "search") {
+        // Opt-in (PI_SEARCH_BLOCK_REPEAT_QUERIES=1).
+        const query = normalizeSearchQuery((event.input as { query?: unknown } | undefined)?.query);
+        if (query !== null) {
+          if (issuedQueries.has(query)) {
+            console.error(
+              `[pi-search] Blocking repeated search query ${JSON.stringify(query).slice(0, 300)}.`,
+            );
+            return { block: true, reason: REPEAT_QUERY_BLOCK_MESSAGE };
+          }
+          issuedQueries.add(query);
+        }
+      }
       return;
     }
     if (
@@ -198,14 +294,11 @@ export function registerPiSearchExtension(
       event.toolName === "read_search_results" ||
       event.toolName === "read_document"
     ) {
+      const steer = submitNowBlockReason === SUBMIT_NOW_BLOCK_REASON ? "timeout" : "context-budget";
       console.error(
-        `[pi-search] Blocking ${event.toolName} after timeout steer; model must submit final answer now.`,
+        `[pi-search] Blocking ${event.toolName} after ${steer} steer; model must submit final answer now.`,
       );
-      return {
-        block: true,
-        reason:
-          "Time budget is nearly exhausted. Do not use more retrieval tools; submit your final answer right now.",
-      };
+      return { block: true, reason: submitNowBlockReason };
     }
   });
 
@@ -237,7 +330,11 @@ export function registerPiSearchExtension(
             "Always provide reason first. Keep it specific and under 100 words.",
             "Use query as a short raw lexical query string, not a structured object and not raw Lucene syntax.",
             "The search result itself is the visible ranked list; there is no search_id or result-page browsing tool in this condition.",
-            "Keep hits small by default. Increase hits only when the visible ranking is too shallow for the question.",
+            ...(isDirectSearchHitsCapped()
+              ? []
+              : [
+                  "Keep hits small by default. Increase hits only when the visible ranking is too shallow for the question.",
+                ]),
             "Open promising docids with read_document before answering.",
           ]
         : [
@@ -248,11 +345,17 @@ export function registerPiSearchExtension(
             "After browsing a ranking that surfaces plausible candidates, inspect one with read_document(docid).",
           ],
     parameters:
-      toolInterface === "pyserini-rest-2tool" ? DirectSearchParamsSchema : PlainSearchParamsSchema,
+      toolInterface === "pyserini-rest-2tool"
+        ? isDirectSearchHitsCapped()
+          ? DirectSearchParamsPinnedSchema
+          : DirectSearchParamsSchema
+        : PlainSearchParamsSchema,
     async execute(toolCallId, params, signal, _onUpdate, ctx) {
-      return toolInterface === "pyserini-rest-2tool"
-        ? executeDirectSearchTool(params, signal, ctx, toolDeps, toolCallId)
-        : executeSearchTool(params, signal, ctx, toolDeps);
+      const run = async () =>
+        toolInterface === "pyserini-rest-2tool"
+          ? executeDirectSearchTool(params, signal, ctx, toolDeps, toolCallId)
+          : executeSearchTool(params, signal, ctx, toolDeps);
+      return failFast ? runFailFast(run, "search") : run();
     },
   });
 
@@ -306,11 +409,56 @@ export function registerPiSearchExtension(
         ? DirectReadDocumentParamsSchema
         : ReadDocumentParamsSchema,
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
-      return toolInterface === "pyserini-rest-2tool" && !pyseriniRestPaginatedRead
-        ? executeDirectReadDocumentTool(params, signal, ctx, toolDeps)
-        : executeReadDocumentTool(params, signal, ctx, toolDeps);
+      const run = async () =>
+        toolInterface === "pyserini-rest-2tool" && !pyseriniRestPaginatedRead
+          ? executeDirectReadDocumentTool(params, signal, ctx, toolDeps)
+          : executeReadDocumentTool(params, signal, ctx, toolDeps);
+      return failFast ? runFailFast(run, "read_document") : run();
     },
   });
+}
+
+/** Exit status of the pi process when a search-side failure aborts the run (PI_SEARCH_FAIL_FAST=1). */
+export const PI_SEARCH_FATAL_EXIT_CODE = 75;
+
+/**
+ * Fail-fast (opt-in): PI_SEARCH_FAIL_FAST=1 ends the run when retrieval or
+ * reranking fails, instead of handing the model a tool error.
+ *
+ * Both have already gone through their own bounded retries. A tool error lets
+ * the trajectory continue without evidence and still be scored; with this
+ * flag the pi process prints a marker line and exits, and the benchmark
+ * runner records the run as failed with that reason (failure.kind). Argument
+ * validation errors are the model's own mistakes and still come back to it as
+ * tool errors. Unset = failures reach the model as before.
+ */
+export function isFailFastEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.PI_SEARCH_FAIL_FAST === "1";
+}
+
+async function runFailFast<T>(run: () => Promise<T>, tool: string): Promise<T> {
+  try {
+    return await run();
+  } catch (error) {
+    abortOnFatalPiSearchError(error, tool);
+    throw error;
+  }
+}
+
+function abortOnFatalPiSearchError(error: unknown, tool: string): void {
+  const kind =
+    error instanceof PiSearchRerankError
+      ? "rerank_error"
+      : error instanceof PiSearchBackendUnavailableError ||
+          error instanceof PiSearchBackendExecutionError
+        ? "retrieval_error"
+        : null;
+  if (!kind) return;
+  const message = (error instanceof Error ? error.message : String(error))
+    .replace(/\s+/g, " ")
+    .slice(0, 500);
+  writeSync(2, `[pi-search] FATAL kind=${kind} tool=${tool} message=${message}\n`);
+  process.exit(PI_SEARCH_FATAL_EXIT_CODE);
 }
 
 export default function (pi: ExtensionAPI) {

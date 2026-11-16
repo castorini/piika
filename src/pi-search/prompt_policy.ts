@@ -3,15 +3,29 @@ import { join } from "node:path";
 
 export const BENCHMARK_TIMEOUT_SECONDS = Number.parseFloat(process.env.TIMEOUT_SECONDS ?? "");
 export const SUBMIT_NOW_TRIGGER_RATIO = 0.7;
-export const SUBMIT_NOW_STEER_MESSAGE = [
-  "Time budget is nearly exhausted.",
-  "Further retrieval is now blocked to preserve time for submission.",
-  "Stop using tools immediately and submit your best answer right now.",
+const SUBMIT_NOW_FORMAT_LINES = [
   "Your final response must use exactly this format:",
   "Explanation: {your explanation for your final answer. Cite supporting docids inline in square brackets [] at the end of sentences when possible, for example [123].}",
   "Exact Answer: {your succinct, final answer}",
   "Confidence: {your confidence score between 0% and 100%}",
+];
+export const SUBMIT_NOW_STEER_MESSAGE = [
+  "Time budget is nearly exhausted.",
+  "Further retrieval is now blocked to preserve time for submission.",
+  "Stop using tools immediately and submit your best answer right now.",
+  ...SUBMIT_NOW_FORMAT_LINES,
 ].join("\n");
+export const SUBMIT_NOW_BLOCK_REASON =
+  "Time budget is nearly exhausted. Do not use more retrieval tools; submit your final answer right now.";
+/** Steer and block note of the prompt-size trigger (PI_SEARCH_SUBMIT_NOW_PROMPT_TOKENS). */
+export const CONTEXT_SUBMIT_NOW_STEER_MESSAGE = [
+  "Context budget is nearly exhausted: this conversation is close to the model's context limit.",
+  "Further retrieval is now blocked.",
+  "Stop using tools immediately and submit your best answer right now.",
+  ...SUBMIT_NOW_FORMAT_LINES,
+].join("\n");
+export const CONTEXT_SUBMIT_NOW_BLOCK_REASON =
+  "Context budget is nearly exhausted. Do not use more retrieval tools; submit your final answer right now.";
 
 function stripSection(systemPrompt: string, header: string, endMarkers: string[]): string {
   const start = systemPrompt.indexOf(header);
@@ -76,4 +90,64 @@ export function getSubmitNowDelayMs(): number | null {
     return null;
   }
   return Math.max(1, Math.floor(BENCHMARK_TIMEOUT_SECONDS * SUBMIT_NOW_TRIGGER_RATIO * 1000));
+}
+
+/**
+ * Prompt-size submit-now trigger (opt-in): PI_SEARCH_SUBMIT_NOW_PROMPT_TOKENS=<n>.
+ *
+ * The time trigger above fires at 70% of TIMEOUT_SECONDS, but runs that loop
+ * hit the model's context limit long before that. With this set, an assistant
+ * turn that calls tools and whose prompt plus output has reached n tokens
+ * queues the same submit-now steer and blocks retrieval tools from that turn
+ * on. Unset = no trigger, and the extension behaves exactly as before.
+ */
+export function resolveSubmitNowPromptTokens(env: NodeJS.ProcessEnv = process.env): number | null {
+  const raw = env.PI_SEARCH_SUBMIT_NOW_PROMPT_TOKENS?.trim();
+  if (!raw) {
+    return null;
+  }
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new Error(
+      `PI_SEARCH_SUBMIT_NOW_PROMPT_TOKENS must be a positive integer token count, got ${JSON.stringify(raw)}`,
+    );
+  }
+  return value;
+}
+
+/** Tokens in the context after an assistant turn: its prompt plus its output. */
+export function contextTokensAfterTurn(usage: {
+  input?: number;
+  output?: number;
+  cacheRead?: number;
+  cacheWrite?: number;
+  totalTokens?: number;
+}): number {
+  if (typeof usage.totalTokens === "number" && usage.totalTokens > 0) {
+    return usage.totalTokens;
+  }
+  return (
+    (usage.input ?? 0) + (usage.cacheRead ?? 0) + (usage.cacheWrite ?? 0) + (usage.output ?? 0)
+  );
+}
+
+/**
+ * Repeated-query block (opt-in): PI_SEARCH_BLOCK_REPEAT_QUERIES=1 refuses a
+ * search whose query the agent already issued in this session; the model gets
+ * this note as the tool result instead of the same hits again.
+ */
+export function isRepeatQueryBlockEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.PI_SEARCH_BLOCK_REPEAT_QUERIES === "1";
+}
+
+export const REPEAT_QUERY_BLOCK_MESSAGE =
+  "You already ran this exact search query; its results are earlier in this conversation. Use a different query, or give your best answer if you have no new query.";
+
+/** Queries are compared after trimming and collapsing whitespace; case is kept. */
+export function normalizeSearchQuery(query: unknown): string | null {
+  if (typeof query !== "string") {
+    return null;
+  }
+  const normalized = query.trim().replace(/\s+/gu, " ");
+  return normalized === "" ? null : normalized;
 }

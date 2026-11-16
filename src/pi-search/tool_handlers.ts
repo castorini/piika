@@ -129,9 +129,37 @@ function formatDirectReadDocumentText(args: {
   return lines.join("\n").trim();
 }
 
+/**
+ * Upper bound on hits per search. PI_SEARCH_MAX_HITS lowers it for a run: a
+ * model that raises `hits` on some calls but not others changes how many
+ * documents each run surfaces, which then confounds comparisons between
+ * conditions. Set it to the default (5) to pin k for every call. Unset = 100.
+ */
+function directSearchMaxLimit(): number {
+  const raw = process.env.PI_SEARCH_MAX_HITS?.trim();
+  if (!raw) return DIRECT_SEARCH_MAX_LIMIT;
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed) || parsed < 1 || parsed > DIRECT_SEARCH_MAX_LIMIT) {
+    throw new Error(
+      `PI_SEARCH_MAX_HITS must be an integer in 1..${DIRECT_SEARCH_MAX_LIMIT}; received ${raw}`,
+    );
+  }
+  return parsed;
+}
+
+/** True when PI_SEARCH_MAX_HITS pins k for the run (the `hits` parameter is then withheld from the model). */
+export function isDirectSearchHitsCapped(): boolean {
+  return Boolean(process.env.PI_SEARCH_MAX_HITS?.trim());
+}
+
+/** Test seam for the hits cap; production code calls normalizeDirectSearchLimit. */
+export function normalizeDirectSearchLimitForTest(value: number | undefined): number {
+  return normalizeDirectSearchLimit(value);
+}
+
 function normalizeDirectSearchLimit(value: number | undefined): number {
   const parsed = normalizePositiveInteger(value, DIRECT_SEARCH_DEFAULT_LIMIT);
-  return Math.min(parsed, DIRECT_SEARCH_MAX_LIMIT);
+  return Math.min(parsed, directSearchMaxLimit());
 }
 
 export async function executeSearchTool(

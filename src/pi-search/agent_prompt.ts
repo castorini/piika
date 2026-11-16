@@ -32,14 +32,55 @@ const THREE_TOOL_WORKFLOW = `Workflow:
 6. Use search refinements only when they add a genuinely new clue from what you already saw.
 7. Every call to search, read_search_results, and read_document must include reason as the first argument. Keep it specific, under 100 words, and focused on the clue, gap, candidate, or ranking issue.`;
 
+const REFINEMENT_RULE =
+  "6. Use search refinements only when they add a genuinely new clue from what you already saw.";
+
+// Opt-in (PI_SEARCH_NO_REPEAT_QUERY_RULE=1): appended to rule 6. Unset = the prompt is unchanged.
+export const NO_REPEAT_QUERY_RULE =
+  "Never issue a search query you have already issued; if you have no new query to try, give your best answer.";
+
+// Opt-in (PI_SEARCH_REFINE_RULE_V2=1): replaces rule 6 as a whole. Refining is
+// encouraged when the evidence is missing; only an identical query is forbidden.
+export const REFINEMENT_RULE_V2 =
+  "6. When the results so far do not give you the evidence you need, refine your search with a different query: change the terms, add a clue from what you have read, or try another angle. Never issue a search query identical to one you have already issued; if you have no new query to try, give your best answer.";
+
 function toolWorkflow(toolInterface: PiSearchToolInterface): string {
-  return toolInterface === "pyserini-rest-2tool" ? TWO_TOOL_WORKFLOW : THREE_TOOL_WORKFLOW;
+  const workflow =
+    toolInterface === "pyserini-rest-2tool" ? TWO_TOOL_WORKFLOW : THREE_TOOL_WORKFLOW;
+  const appendRule = process.env.PI_SEARCH_NO_REPEAT_QUERY_RULE === "1";
+  const replaceRule = process.env.PI_SEARCH_REFINE_RULE_V2 === "1";
+  if (!appendRule && !replaceRule) {
+    return workflow;
+  }
+  if (appendRule && replaceRule) {
+    throw new Error(
+      "PI_SEARCH_NO_REPEAT_QUERY_RULE=1 and PI_SEARCH_REFINE_RULE_V2=1 are alternative rule-6 edits; set one",
+    );
+  }
+  if (!workflow.includes(REFINEMENT_RULE)) {
+    throw new Error("a rule-6 edit is enabled but the workflow has no rule 6 to edit");
+  }
+  return workflow.replace(
+    REFINEMENT_RULE,
+    replaceRule ? REFINEMENT_RULE_V2 : `${REFINEMENT_RULE} ${NO_REPEAT_QUERY_RULE}`,
+  );
 }
 
 const ANSWER_INSTRUCTIONS = `Answer output:
 - Produce a concise answer supported by the documents you found.
 - Cite supporting docids inline when possible.
 - Keep Exact Answer directly responsive to the question.`;
+
+// Opt-in (PI_SEARCH_COMPLETE_ANSWER_SET=1): for questions whose answer is a set
+// of items, ask for every member as a JSON array. Unset = the prompt is unchanged.
+export const COMPLETE_ANSWER_SET_INSTRUCTION =
+  "- Provide the complete set of answers requested by the question, without omitting any member. Return each distinct answer once as a concise JSON array of strings; do not add speculative alternatives. Answer ordering is not evaluated.";
+
+function answerInstructions(): string {
+  return process.env.PI_SEARCH_COMPLETE_ANSWER_SET === "1"
+    ? `${ANSWER_INSTRUCTIONS}\n${COMPLETE_ANSWER_SET_INSTRUCTION}`
+    : ANSWER_INSTRUCTIONS;
+}
 
 function rankedListInstructions(depth: number, count?: number): string {
   const sizeInstruction = count
@@ -105,7 +146,7 @@ export function formatPiSearchPrompt(
   const wantsRankedList = hasPiSearchOutputMode(modes, "ranked_list");
   const workflow = toolWorkflow(options?.toolInterface ?? DEFAULT_PI_SEARCH_TOOL_INTERFACE);
   const outputInstructions = [
-    wantsAnswer ? ANSWER_INSTRUCTIONS : undefined,
+    wantsAnswer ? answerInstructions() : undefined,
     wantsRankedList
       ? rankedListInstructions(options?.rankedListDepth ?? 1000, options?.rankedListCount)
       : undefined,
@@ -144,7 +185,7 @@ export function formatPiSearchPromptWithSuppliedContext(
   const wantsAnswer = hasPiSearchOutputMode(modes, "answer");
   const wantsRankedList = hasPiSearchOutputMode(modes, "ranked_list");
   const outputInstructions = [
-    wantsAnswer ? ANSWER_INSTRUCTIONS : undefined,
+    wantsAnswer ? answerInstructions() : undefined,
     wantsRankedList
       ? rankedListInstructions(options?.rankedListDepth ?? 1000, options?.rankedListCount)
       : undefined,
