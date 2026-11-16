@@ -98,6 +98,74 @@ function sliceDocumentLines(text: string, offset: number, limit: number) {
   };
 }
 
+const REST_BASE_DELAY_MS = 1000;
+const REST_MAX_DELAY_MS = 30_000;
+// 429 is the rate limit; 502/503/504 are the gateway/overload responses a
+// briefly saturated service returns.
+const REST_RETRY_STATUSES = new Set([429, 502, 503, 504]);
+
+/**
+ * Caps requests in flight and spaces request starts, per agent process.
+ * Opt-in: built only when maxConcurrentRequests or minRequestIntervalMs is
+ * set; without it every request goes straight to fetch as before.
+ */
+class RequestGate {
+  private active = 0;
+  private nextSlotAt = 0;
+  private readonly waiters: Array<() => void> = [];
+
+  /**
+   * @param limit      requests in flight at once
+   * @param intervalMs minimum ms between request starts; a service that
+   *                   throttles by rate still counts a rejected request, so
+   *                   pacing beats retrying
+   */
+  constructor(
+    private readonly limit: number,
+    private readonly intervalMs: number,
+  ) {}
+
+  async run<T>(task: () => Promise<T>): Promise<T> {
+    if (this.active >= this.limit) {
+      await new Promise<void>((resolve) => this.waiters.push(resolve));
+    }
+    this.active += 1;
+    try {
+      const wait = this.nextSlotAt - Date.now();
+      this.nextSlotAt = Math.max(this.nextSlotAt, Date.now()) + this.intervalMs;
+      if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
+      return await task();
+    } finally {
+      this.active -= 1;
+      this.waiters.shift()?.();
+    }
+  }
+}
+
+function parseRetryAfterMs(header: string | null): number | undefined {
+  if (!header) return undefined;
+  const seconds = Number(header);
+  if (Number.isFinite(seconds) && seconds >= 0) return seconds * 1000;
+  const at = Date.parse(header);
+  return Number.isFinite(at) ? Math.max(0, at - Date.now()) : undefined;
+}
+
+async function backoff(
+  operation: string,
+  attempt: number,
+  maxAttempts: number,
+  reason: string,
+  retryAfterMs?: number,
+): Promise<void> {
+  const exponential = Math.min(REST_MAX_DELAY_MS, REST_BASE_DELAY_MS * 2 ** (attempt - 1));
+  const jittered = exponential * (0.5 + Math.random());
+  const delayMs = Math.round(Math.max(jittered, retryAfterMs ?? 0));
+  console.error(
+    `[pi-search] ${operation} failed (${reason}); retry ${attempt}/${maxAttempts - 1} in ${delayMs}ms`,
+  );
+  await new Promise((resolve) => setTimeout(resolve, delayMs));
+}
+
 function truncateSnippet(
   text: string,
   maxChars = DEFAULT_SEARCH_MAX_DOC_LENGTH,
@@ -116,7 +184,19 @@ export class PyseriniRestSearchBackend implements PiSearchBackend {
   readonly capabilities: SearchBackendCapabilities;
   private readonly baseUrl: string;
 
+  private readonly gate: RequestGate | undefined;
+  private readonly maxAttempts: number;
+
   constructor(private readonly config: PyseriniRestBackendConfig) {
+    this.gate =
+      config.maxConcurrentRequests !== undefined || config.minRequestIntervalMs !== undefined
+        ? new RequestGate(
+            config.maxConcurrentRequests ?? Number.POSITIVE_INFINITY,
+            config.minRequestIntervalMs ?? 0,
+          )
+        : undefined;
+    // 1 (the default) = no retries.
+    this.maxAttempts = config.maxAttempts ?? 1;
     this.baseUrl = normalizeBaseUrl(config.baseUrl);
     this.capabilities = {
       backendId: "pyserini-rest",
@@ -256,20 +336,59 @@ export class PyseriniRestSearchBackend implements PiSearchBackend {
     signal?: AbortSignal,
     options: { notFoundAsUndefined?: boolean } = {},
   ): Promise<unknown> {
-    let response: Response;
-    try {
-      response = await fetch(url, {
-        headers: getAuthHeaders(this.config),
-        signal,
-      });
-    } catch (error) {
-      throw new PiSearchBackendUnavailableError(
-        this.capabilities.backendId,
-        error instanceof Error ? error.message : String(error),
-      );
-    }
+    const run = () => this.fetchJsonOnce(operation, url, signal, options);
+    return this.gate ? this.gate.run(run) : run();
+  }
 
-    const text = await response.text();
+  private async fetchJsonOnce(
+    operation: "search" | "readDocument",
+    url: URL,
+    signal?: AbortSignal,
+    options: { notFoundAsUndefined?: boolean } = {},
+  ): Promise<unknown> {
+    // With maxAttempts > 1 (opt-in), network errors and rate-limit or overload
+    // statuses are retried with exponential backoff and jitter, honouring
+    // Retry-After; the last attempt's outcome is handled as before.
+    let response: Response | undefined;
+    let text = "";
+    for (let attempt = 1; attempt <= this.maxAttempts; attempt += 1) {
+      try {
+        response = await fetch(url, {
+          headers: getAuthHeaders(this.config),
+          signal,
+        });
+      } catch (error) {
+        if (attempt < this.maxAttempts && !signal?.aborted) {
+          await backoff(
+            operation,
+            attempt,
+            this.maxAttempts,
+            error instanceof Error ? error.message : String(error),
+          );
+          continue;
+        }
+        throw new PiSearchBackendUnavailableError(
+          this.capabilities.backendId,
+          error instanceof Error ? error.message : String(error),
+        );
+      }
+      text = await response.text();
+      if (REST_RETRY_STATUSES.has(response.status) && attempt < this.maxAttempts) {
+        const retryAfterMs = parseRetryAfterMs(response.headers.get("retry-after"));
+        await backoff(
+          operation,
+          attempt,
+          this.maxAttempts,
+          `HTTP ${response.status}`,
+          retryAfterMs,
+        );
+        continue;
+      }
+      break;
+    }
+    if (!response) {
+      throw new PiSearchBackendUnavailableError(this.capabilities.backendId, "no response");
+    }
     if (response.status === 404 && options.notFoundAsUndefined) {
       return undefined;
     }

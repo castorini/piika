@@ -126,6 +126,11 @@ export const ReadDocumentPayloadSchema = Type.Object(
 );
 
 export type PlainSearchParams = Static<typeof PlainSearchParamsSchema>;
+/** The direct search parameters without `hits`, for runs that pin k
+ *  (PI_SEARCH_MAX_HITS): the model is not offered a knob the harness would
+ *  silently override. */
+export const DirectSearchParamsPinnedSchema = Type.Omit(DirectSearchParamsSchema, ["hits"]);
+
 export type DirectSearchParams = Static<typeof DirectSearchParamsSchema>;
 export type ReadSearchResultsParams = Static<typeof ReadSearchResultsParamsSchema>;
 export type ReadDocumentParams = Static<typeof ReadDocumentParamsSchema>;

@@ -63,6 +63,12 @@ const PiSearchPyseriniRestBackendConfigSchema = Type.Object(
     tokenEnv: Type.Optional(Type.String({ minLength: 1 })),
     searchMaxDocLength: Type.Optional(Type.Number({ minimum: 1 })),
     readMode: Type.Optional(Type.Union([Type.Literal("full"), Type.Literal("paginated")])),
+    /** Requests in flight per agent process (unset = no cap). */
+    maxConcurrentRequests: Type.Optional(Type.Number({ minimum: 1 })),
+    /** Minimum ms between request starts per agent process (unset = no pacing). */
+    minRequestIntervalMs: Type.Optional(Type.Number({ minimum: 0 })),
+    /** Attempts per request on network errors and 429/502/503/504 (unset = 1, no retries). */
+    maxAttempts: Type.Optional(Type.Number({ minimum: 1 })),
   },
   { additionalProperties: false },
 );
@@ -174,6 +180,9 @@ export function buildPyseriniRestExtensionConfig(options: {
   tokenEnv?: string;
   searchMaxDocLength?: number;
   readMode?: "full" | "paginated";
+  maxConcurrentRequests?: number;
+  minRequestIntervalMs?: number;
+  maxAttempts?: number;
 }): PiSearchExtensionConfig {
   return {
     backend: {
@@ -183,6 +192,9 @@ export function buildPyseriniRestExtensionConfig(options: {
       tokenEnv: options.tokenEnv,
       searchMaxDocLength: options.searchMaxDocLength,
       readMode: options.readMode,
+      maxConcurrentRequests: options.maxConcurrentRequests,
+      minRequestIntervalMs: options.minRequestIntervalMs,
+      maxAttempts: options.maxAttempts,
     },
   };
 }

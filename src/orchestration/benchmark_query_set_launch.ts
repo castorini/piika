@@ -119,6 +119,9 @@ function buildPyseriniRestEnvShortcut(baseEnv: NodeJS.ProcessEnv): Record<string
     tokenEnv,
     searchMaxDocLength: parseOptionalIntegerEnv(baseEnv, "PYSERINI_REST_SEARCH_MAX_DOC_LENGTH"),
     readMode,
+    maxConcurrentRequests: parseOptionalIntegerEnv(baseEnv, "PYSERINI_REST_MAX_CONCURRENT"),
+    minRequestIntervalMs: parseOptionalIntegerEnv(baseEnv, "PYSERINI_REST_MIN_INTERVAL_MS"),
+    maxAttempts: parseOptionalIntegerEnv(baseEnv, "PYSERINI_REST_MAX_ATTEMPTS"),
   });
 
   return {
