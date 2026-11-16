@@ -126,7 +126,7 @@ ${outputInstructions.join("\n\n")}
 Your final response must contain exactly these sections in this order:
 ${responseSections.join("\n\n")}
 
-Do not include any text before, after, or between those sections beyond the requested fields and ranked document lines.
+Do not include any text before, after, or between those sections beyond the requested fields${wantsRankedList ? " and ranked document lines" : ""}.
 
 ${SUBMIT_NOW_REMINDER}
 
@@ -182,7 +182,7 @@ ${outputInstructions.join("\n\n")}
 Your final response must contain exactly these sections in this order:
 ${responseSections.join("\n\n")}
 
-Do not include any text before, after, or between those sections beyond the requested fields and ranked document lines.
+Do not include any text before, after, or between those sections beyond the requested fields${wantsRankedList ? " and ranked document lines" : ""}.
 
 ${SUBMIT_NOW_REMINDER}
 
