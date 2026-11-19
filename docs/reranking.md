@@ -20,9 +20,11 @@ piika only forwards the query, the candidates, and the context it is allowed to 
 vllm serve Qwen/Qwen3-Reranker-4B --port 8000 --max-model-len 8192 \
   --enable-prefix-caching --logprobs-mode processed_logprobs
 
-# pointwise yes/no relevance (one forward pass per candidate)
+# pointwise yes/no relevance (one forward pass per candidate), scored as on the
+# Qwen3-Reranker model card: P(yes) over P(yes) + P(no)
 python scripts/rank_llm_rerank_worker.py --port 8200 --kind pointwise \
-  --model Qwen/Qwen3-Reranker-4B --vllm-url http://127.0.0.1:8000/v1
+  --model Qwen/Qwen3-Reranker-4B --vllm-url http://127.0.0.1:8000/v1 \
+  --positive-token yes --negative-token no
 
 # setwise selection over sliding windows (a generative listwise model)
 python scripts/rank_llm_rerank_worker.py --port 8201 --kind setwise \
@@ -35,21 +37,22 @@ python scripts/rank_llm_rerank_worker.py --port 8201 --kind setwise \
 
 Worker flags that shape what the model sees:
 
-| Flag                                                           | Meaning                                                                                                                              |
-| -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `--kind pointwise\|setwise`                                    | rank_llm pointwise vLLM coordinator, or the listwise one with sliding windows                                                        |
-| `--template`, `--template-<mode>`                              | prompt template per context mode (`global-query`, `reasoning`, `full`); the mode is chosen per request from the fields actually sent |
-| `--field-map SRC=DST`                                          | rename a context field for the template, e.g. `reasoning=query_intent`                                                               |
-| `--field-max-tokens FIELD=N`                                   | cap a field at N tokens of the served model's tokenizer, head kept (`query` caps the search query)                                   |
-| `--context-size`, `--batch-size`                               | rank_llm context window and batch size                                                                                               |
-| `--max-passage-words`, `--max-passage-tokens`                  | passage caps                                                                                                                         |
-| `--window-size`, `--stride`                                    | setwise windows                                                                                                                      |
-| `--temperature`, `--top-p`, `--top-k`, `--min-p`, `--thinking` | setwise sampling                                                                                                                     |
-| `--token-mode`                                                 | pointwise yes/no token matching (rank_llm `token_mode`)                                                                              |
-| `--log-requests FILE`, `--log-prompts none\|first\|all`        | one JSONL line per request: candidates, scores or windows, returned docids, prompts                                                  |
+| Flag                                                           | Meaning                                                                                                                                                                                                                              |
+| -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `--kind pointwise\|setwise`                                    | rank_llm pointwise vLLM coordinator, or the listwise one with sliding windows                                                                                                                                                        |
+| `--template`, `--template-<mode>`                              | prompt template per context mode (`global-query`, `reasoning`, `full`); the mode is chosen per request from the fields actually sent                                                                                                 |
+| `--field-map SRC=DST`                                          | rename a context field for the template, e.g. `reasoning=query_intent`                                                                                                                                                               |
+| `--field-max-tokens FIELD=N`                                   | cap a field at N tokens of the served model's tokenizer, head kept (`query` caps the search query)                                                                                                                                   |
+| `--context-size`, `--batch-size`                               | rank_llm context window and batch size                                                                                                                                                                                               |
+| `--max-passage-words`, `--max-passage-tokens`                  | passage caps                                                                                                                                                                                                                         |
+| `--window-size`, `--stride`                                    | setwise windows                                                                                                                                                                                                                      |
+| `--temperature`, `--top-p`, `--top-k`, `--min-p`, `--thinking` | setwise sampling                                                                                                                                                                                                                     |
+| `--positive-token`, `--negative-token`                         | pointwise answer tokens, repeatable (e.g. `yes` / `no`, or `true` / `false`); the score is the probability of a positive token over that of any answer token. Unset: the template's `output_tokens`, else rank_llm's yes/no defaults |
+| `--log-requests FILE`, `--log-prompts none\|first\|all`        | one JSONL line per request: candidates, scores or windows, returned docids, prompts                                                                                                                                                  |
 
 Context modes other than `none` need a rank_llm build whose `Query` carries named context
-fields (`Query.fields`) and templates that render them.
+fields (`Query.fields`) and templates that render them. `--positive-token` / `--negative-token`
+need a rank_llm whose `PointwiseVLLM` takes `positive_tokens` / `negative_tokens`.
 
 ## 2. Run piika against it
 
