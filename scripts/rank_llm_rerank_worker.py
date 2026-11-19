@@ -12,7 +12,8 @@ of its own machinery as possible. Every rank_llm setting is a flag (--help).
 
   pointwise yes/no relevance, matching the published Qwen3-Reranker computation
     python scripts/rank_llm_rerank_worker.py --port 8200 --kind pointwise \
-        --model Qwen/Qwen3-Reranker-4B --vllm-url http://127.0.0.1:8000/v1
+        --model Qwen/Qwen3-Reranker-4B --vllm-url http://127.0.0.1:8000/v1 \
+        --positive-token yes --negative-token no
 
   setwise selection over sliding windows (a generative listwise model)
     python scripts/rank_llm_rerank_worker.py --port 8201 --kind setwise \
@@ -73,13 +74,19 @@ def build_coordinator(args: argparse.Namespace, template: str | None):
     # default is a Path, so a plain string is rejected.
     kwargs = {"prompt_template_path": Path(template)} if template else {}
     if args.kind == "pointwise":
+        # Answer tokens: the flags if given, else the template's output_tokens,
+        # else rank_llm's yes/no defaults. The score is the probability of a
+        # positive token over that of any answer token.
+        answer = (
+            {"positive_tokens": args.positive_token, "negative_tokens": args.negative_token}
+            if args.positive_token
+            else {}
+        )
         return Reranker.create_model_coordinator(
             args.model, None, False,
             pointwise_vllm=True,
             max_passage_words=args.max_passage_words,
-            # "exact" restricts scoring to the two lowercase tokens, as the
-            # Qwen3-Reranker model card specifies.
-            token_mode=args.token_mode,
+            **answer,
             **kwargs,
             **common,
         )
@@ -417,14 +424,19 @@ def main() -> None:
                     help="setwise, with --log-requests: also log every candidate's text as received (smoke checks)")
     ap.add_argument("--window-size", type=int, default=20, help="setwise: candidates per window")
     ap.add_argument("--stride", type=int, default=10, help="setwise: window step")
-    ap.add_argument("--token-mode", default="exact",
-                    help="pointwise: how rank_llm reads the yes/no logprobs (rank_llm's token_mode)")
+    ap.add_argument("--positive-token", action="append", default=[], metavar="TOKEN",
+                    help="pointwise: a token that answers 'relevant', e.g. yes or true (repeatable; "
+                         "with --negative-token). Unset: the template's output_tokens, else rank_llm's yes/no")
+    ap.add_argument("--negative-token", action="append", default=[], metavar="TOKEN",
+                    help="pointwise: a token that answers 'not relevant', e.g. no or false (repeatable)")
     ap.add_argument("--thinking", action="store_true", help="setwise: let the model think before selecting")
     ap.add_argument("--temperature", type=float, default=0.7, help="setwise sampling")
     ap.add_argument("--top-p", type=float, default=0.8, help="setwise sampling")
     ap.add_argument("--top-k", type=int, default=20, help="setwise sampling")
     ap.add_argument("--min-p", type=float, default=0.0, help="setwise sampling")
     args = ap.parse_args()
+    if bool(args.positive_token) != bool(args.negative_token):
+        ap.error("--positive-token and --negative-token must be given together")
 
     args.field_map = dict(kv.split("=", 1) for kv in args.field_map)
     args.field_max_tokens = {k: int(v) for k, v in (kv.split("=", 1) for kv in args.field_max_tokens)}
