@@ -30,6 +30,7 @@ mode works with the stock pointwise template.
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import json
 import logging
 import re
@@ -42,6 +43,10 @@ from rank_llm.data import Candidate, Query, Request
 from rank_llm.rerank import Reranker
 
 logger = logging.getLogger("rerank_worker")
+
+# Context fields reach a template through Query.fields, which rank_llm releases
+# before query-context support lack. Without it only the no-context mode works.
+QUERY_TAKES_FIELDS = "fields" in {f.name for f in dataclasses.fields(Query)}
 
 def context_mode_for(fields: dict) -> str:
     """Which context mode a request's fields correspond to.
@@ -280,8 +285,17 @@ class RerankService:
         if self.args.field_max_tokens:
             fields = {k: self._cap_tokens(v, self.args.field_max_tokens.get(k)) for k, v in fields.items()}
             query_text = self._cap_tokens(query_text, self.args.field_max_tokens.get("query"))
+        if fields and not QUERY_TAKES_FIELDS:
+            raise RuntimeError(
+                f"the request carries context fields {sorted(fields)}, but the installed rank_llm's "
+                "Query has no `fields`; install a rank_llm with query context fields"
+            )
         request = Request(
-            query=Query(text=query_text, qid=str(payload.get("qid") or "0"), fields=fields),
+            query=Query(
+                text=query_text,
+                qid=str(payload.get("qid") or "0"),
+                **({"fields": fields} if fields else {}),
+            ),
             candidates=[
                 Candidate(
                     docid=str(c["docid"]),
@@ -437,6 +451,9 @@ def main() -> None:
     args = ap.parse_args()
     if bool(args.positive_token) != bool(args.negative_token):
         ap.error("--positive-token and --negative-token must be given together")
+    if not QUERY_TAKES_FIELDS and (args.template_reasoning or args.template_global_query or args.template_full):
+        ap.error("--template-reasoning/--template-global-query/--template-full need a rank_llm whose "
+                 "Query has `fields` (query context fields); this one has none")
 
     args.field_map = dict(kv.split("=", 1) for kv in args.field_map)
     args.field_max_tokens = {k: int(v) for k, v in (kv.split("=", 1) for kv in args.field_max_tokens)}

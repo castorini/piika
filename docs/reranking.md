@@ -50,9 +50,11 @@ Worker flags that shape what the model sees:
 | `--positive-token`, `--negative-token`                         | pointwise answer tokens, repeatable (e.g. `yes` / `no`, or `true` / `false`); the score is the probability of a positive token over that of any answer token. Unset: the template's `output_tokens`, else rank_llm's yes/no defaults |
 | `--log-requests FILE`, `--log-prompts none\|first\|all`        | one JSONL line per request: candidates, scores or windows, returned docids, prompts                                                                                                                                                  |
 
-Context modes other than `none` need a rank_llm build whose `Query` carries named context
-fields (`Query.fields`) and templates that render them. `--positive-token` / `--negative-token`
-need a rank_llm whose `PointwiseVLLM` takes `positive_tokens` / `negative_tokens`.
+rank_llm requirements: `--positive-token` / `--negative-token` need a rank_llm whose `PointwiseVLLM`
+takes `positive_tokens` / `negative_tokens` (castorini/rank_llm#487, merged). Context modes other
+than `none` also need a rank_llm whose `Query` carries named context fields (`Query.fields`) and
+templates that render them; with a rank_llm without them the worker refuses the `--template-<mode>`
+flags at startup, and a request carrying context fails instead of being reranked without it.
 
 ## 2. Run piika against it
 
