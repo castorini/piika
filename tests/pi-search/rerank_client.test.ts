@@ -56,7 +56,7 @@ void test("sends context fields and applies the returned order", async () => {
       assert.deepEqual(out.docids, ["c", "a"]);
       assert.equal(out.failed, false);
       assert.equal(out.usage.promptTokens, 900);
-      assert.deepEqual(seen().query_fields, { global_query: "G", reasoning: "R" });
+      assert.deepEqual(seen().extra_fields, { global_query: "G", reasoning: "R" });
       assert.equal(seen().top_k, 2);
     },
   );

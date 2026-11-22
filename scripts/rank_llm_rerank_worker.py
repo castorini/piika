@@ -23,7 +23,7 @@ of its own machinery as possible. Every rank_llm setting is a flag (--help).
 Then run piika with --rerank-worker-url http://127.0.0.1:8200 (docs/reranking.md).
 
 Context modes (global_query, reasoning, full) need a rank_llm build whose
-Query carries named context fields (Query.fields) and whose prompt templates
+Query carries extra named values (Query.extra_fields) and whose prompt templates
 can render them; pass one template per mode (--template-<mode>). The no-context
 mode works with the stock pointwise template.
 """
@@ -44,9 +44,9 @@ from rank_llm.rerank import Reranker
 
 logger = logging.getLogger("rerank_worker")
 
-# Context fields reach a template through Query.fields, which rank_llm releases
-# before query-context support lack. Without it only the no-context mode works.
-QUERY_TAKES_FIELDS = "fields" in {f.name for f in dataclasses.fields(Query)}
+# Context reaches a template through Query.extra_fields, which rank_llm releases
+# before it lack. Without it only the no-context mode works.
+QUERY_TAKES_EXTRA_FIELDS = "extra_fields" in {f.name for f in dataclasses.fields(Query)}
 
 def context_mode_for(fields: dict) -> str:
     """Which context mode a request's fields correspond to.
@@ -165,7 +165,7 @@ class RerankService:
             "context_mode": mode,
             "template": self.templates.get(mode) or "stock pointwise_vllm_template.yaml",
             "query": query_text,
-            "fields": fields,
+            "extra_fields": fields,
             "depth": len(request.candidates),
             "top_k": top_k,
             "candidates": [
@@ -244,7 +244,7 @@ class RerankService:
             "context_mode": mode,
             "template": self.templates.get(mode),
             "query": query_text,
-            "fields": fields,
+            "extra_fields": fields,
             "depth": len(request.candidates),
             "top_k": top_k,
             "candidates": [
@@ -269,7 +269,7 @@ class RerankService:
 
     def rerank(self, payload: dict) -> dict:
         query_text = payload["query"]
-        fields = payload.get("query_fields") or {}
+        fields = payload.get("extra_fields") or {}
         candidates = payload["candidates"]
         top_k = int(payload.get("top_k") or len(candidates))
         depth = min(int(payload.get("depth") or len(candidates)), len(candidates))
@@ -285,16 +285,16 @@ class RerankService:
         if self.args.field_max_tokens:
             fields = {k: self._cap_tokens(v, self.args.field_max_tokens.get(k)) for k, v in fields.items()}
             query_text = self._cap_tokens(query_text, self.args.field_max_tokens.get("query"))
-        if fields and not QUERY_TAKES_FIELDS:
+        if fields and not QUERY_TAKES_EXTRA_FIELDS:
             raise RuntimeError(
                 f"the request carries context fields {sorted(fields)}, but the installed rank_llm's "
-                "Query has no `fields`; install a rank_llm with query context fields"
+                "Query has no `extra_fields`; install a rank_llm that has them"
             )
         request = Request(
             query=Query(
                 text=query_text,
                 qid=str(payload.get("qid") or "0"),
-                **({"fields": fields} if fields else {}),
+                **({"extra_fields": fields} if fields else {}),
             ),
             candidates=[
                 Candidate(
@@ -451,9 +451,9 @@ def main() -> None:
     args = ap.parse_args()
     if bool(args.positive_token) != bool(args.negative_token):
         ap.error("--positive-token and --negative-token must be given together")
-    if not QUERY_TAKES_FIELDS and (args.template_reasoning or args.template_global_query or args.template_full):
+    if not QUERY_TAKES_EXTRA_FIELDS and (args.template_reasoning or args.template_global_query or args.template_full):
         ap.error("--template-reasoning/--template-global-query/--template-full need a rank_llm whose "
-                 "Query has `fields` (query context fields); this one has none")
+                 "Query has `extra_fields`; this one has none")
 
     args.field_map = dict(kv.split("=", 1) for kv in args.field_map)
     args.field_max_tokens = {k: int(v) for k, v in (kv.split("=", 1) for kv in args.field_max_tokens)}

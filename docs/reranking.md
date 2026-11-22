@@ -52,7 +52,7 @@ Worker flags that shape what the model sees:
 
 rank_llm requirements: `--positive-token` / `--negative-token` need a rank_llm whose `PointwiseVLLM`
 takes `positive_tokens` / `negative_tokens` (castorini/rank_llm#487, merged). Context modes other
-than `none` also need a rank_llm whose `Query` carries named context fields (`Query.fields`) and
+than `none` also need a rank_llm whose `Query` carries named context fields (`Query.extra_fields`) and
 templates that render them; with a rank_llm without them the worker refuses the `--template-<mode>`
 flags at startup, and a request carrying context fails instead of being reranked without it.
 

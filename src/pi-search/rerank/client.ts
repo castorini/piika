@@ -107,7 +107,7 @@ export class RerankWorkerClient {
     const body = {
       qid,
       query,
-      query_fields: selectContextFields(this.contextMode, context),
+      extra_fields: selectContextFields(this.contextMode, context),
       candidates: candidates.slice(0, this.depth),
       depth: Math.min(this.depth, candidates.length),
       top_k: topK,
